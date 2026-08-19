@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070a18">
+  <meta name="description" content="Glow Strikers — a luminous tabletop striking game. Defend your goal and strike the puck into the opposing goal.">
+  <title>Glow Strikers</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23070a18'/><circle cx='16' cy='16' r='7' fill='none' stroke='%2338e6ff' stroke-width='2.5'/><circle cx='16' cy='16' r='2.4' fill='%23ff5c8a'/></svg>">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game-canvas" aria-hidden="true"></canvas>
+
+    <!-- Play HUD: objective, progress, actor state, pause, context actions -->
+    <div id="hud" hidden>
+      <div id="hud-top">
+        <div id="hud-objective" role="status">Objective</div>
+        <div id="hud-score" aria-label="Score">
+          <span id="score-you" class="score-pill score-you">0</span>
+          <span id="hud-clock" class="score-pill">0:00</span>
+          <span id="score-opp" class="score-pill score-opp">0</span>
+        </div>
+        <button id="btn-pause" class="hud-btn" aria-label="Pause game">II</button>
+      </div>
+      <div id="hud-banner" role="status" aria-live="assertive"></div>
+      <div id="hud-bottom">
+        <div id="hud-budget" hidden></div>
+        <div id="captions" aria-hidden="true"></div>
+        <div id="hud-actions">
+          <button id="btn-undo" class="hud-btn" hidden>Undo</button>
+          <button id="btn-boardstate" class="hud-btn" aria-expanded="false" aria-controls="boardstate-panel">Board&nbsp;state</button>
+        </div>
+      </div>
+      <div id="boardstate-panel" hidden role="region" aria-label="Board state description">
+        <h2 class="sr-only">Board state</h2>
+        <p id="boardstate-text"></p>
+      </div>
+    </div>
+
+    <!-- DOM screens render over the canvas; the canvas is never the only UI. -->
+    <main id="screens"></main>
+
+    <div id="toast-stack" aria-live="polite"></div>
+
+    <!-- Live regions for objective, turn, score, errors and results. -->
+    <div id="live-polite" class="sr-only" aria-live="polite"></div>
+    <div id="live-assertive" class="sr-only" aria-live="assertive"></div>
+  </div>
+
+  <noscript>
+    <div style="color:#fff;font-family:sans-serif;padding:2rem">
+      Glow Strikers requires JavaScript and WebGL.
+    </div>
+  </noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
