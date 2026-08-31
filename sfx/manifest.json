@@ -1,0 +1,86 @@
+[
+  {
+    "name": "ui-tap",
+    "seconds": 1,
+    "prompt": "Short soft plastic button tap, a clean UI click with a gentle snap and no reverb tail",
+    "event": "ui"
+  },
+  {
+    "name": "ui-back",
+    "seconds": 1,
+    "prompt": "Soft low wooden toggle click, a quieter descending tap for going back in a menu",
+    "event": "ui-back"
+  },
+  {
+    "name": "invalid-buzz",
+    "seconds": 1,
+    "prompt": "Short dull electric error buzzer, a low flat buzz rejecting a wrong move",
+    "event": "invalid"
+  },
+  {
+    "name": "puck-strike",
+    "seconds": 1,
+    "prompt": "Hard plastic mallet smacking a puck across an air hockey table, sharp impact crack with a brief sliding rattle",
+    "event": "strike"
+  },
+  {
+    "name": "wall-bank",
+    "seconds": 1,
+    "prompt": "Plastic puck bouncing off a padded rink wall, quick hollow thud with a soft rebound",
+    "event": "wall"
+  },
+  {
+    "name": "obstacle-clack",
+    "seconds": 1,
+    "prompt": "Puck clacking against a small wooden peg obstacle on a game board, bright short knock",
+    "event": "obstacle"
+  },
+  {
+    "name": "countdown-tick",
+    "seconds": 1,
+    "prompt": "Single crisp metronome-like countdown tick, a clean high wooden block strike",
+    "event": "countdown"
+  },
+  {
+    "name": "go-whistle",
+    "seconds": 1,
+    "prompt": "Short bright referee whistle blast signaling the start of play",
+    "event": "go"
+  },
+  {
+    "name": "goal-horn",
+    "seconds": 2,
+    "prompt": "Arena goal horn blast with a swelling crowd cheer, triumphant scoring moment",
+    "event": "goal"
+  },
+  {
+    "name": "win-fanfare",
+    "seconds": 2,
+    "prompt": "Triumphant short brass fanfare flourish, rising major-key stadium victory stinger",
+    "event": "win"
+  },
+  {
+    "name": "lose-sting",
+    "seconds": 2,
+    "prompt": "Descending muted trombone wah-wah defeat sting, comical sad ending",
+    "event": "lose"
+  },
+  {
+    "name": "achievement-chime",
+    "seconds": 1,
+    "prompt": "Bright two-note glockenspiel achievement chime with a light magical sparkle",
+    "event": "achievement"
+  },
+  {
+    "name": "overtime-siren",
+    "seconds": 2,
+    "prompt": "Rising arena siren wail, a tense hockey overtime alarm building urgency",
+    "event": "overtime"
+  },
+  {
+    "name": "budget-empty",
+    "seconds": 1,
+    "prompt": "Hollow coin-empty clunk, a dull mechanical thunk for running out of moves",
+    "event": "budget"
+  }
+]

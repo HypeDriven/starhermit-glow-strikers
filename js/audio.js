@@ -5,6 +5,26 @@
 
 import { RngStream } from './rng.js';
 
+// Authored one-shot samples (sfx/manifest.json) backing logical events. Each
+// clip is lazy-fetched/decoded/cached after the user-gesture unlock; synthesis
+// remains the fallback while a clip loads or if it is missing.
+const SFX_BY_EVENT = {
+  ui: 'ui-tap',
+  'ui-back': 'ui-back',
+  invalid: 'invalid-buzz',
+  strike: 'puck-strike',
+  wall: 'wall-bank',
+  obstacle: 'obstacle-clack',
+  countdown: 'countdown-tick',
+  go: 'go-whistle',
+  goal: 'goal-horn',
+  win: 'win-fanfare',
+  lose: 'lose-sting',
+  achievement: 'achievement-chime',
+  overtime: 'overtime-siren',
+  budget: 'budget-empty',
+};
+
 export class AudioEngine {
   constructor(settings, onCaption = null) {
     this.settings = settings;
@@ -13,6 +33,7 @@ export class AudioEngine {
     this.buses = {};
     this.rng = new RngStream(0xA0D10, 3);
     this.musicState = { playing: false, intensity: 0, timer: null };
+    this.samples = new Map(); // clip name -> { status: 'loading'|'ready'|'failed', buffer }
   }
 
   /** Must be called from a user gesture. Safe to call repeatedly. */
@@ -82,16 +103,58 @@ export class AudioEngine {
 
   _caption(text) { if (this.settings.captions && this.onCaption) this.onCaption(text); }
 
+  /** Caption text for a logical event, so sampled playback stays captioned. */
+  _captionFor(name, opts = {}) {
+    switch (name) {
+      case 'invalid': this._caption('Invalid action'); break;
+      case 'countdown': this._caption(`Starting in ${opts.remaining}`); break;
+      case 'go': this._caption('Go!'); break;
+      case 'goal': this._caption(opts.scorer === 0 ? 'Goal for you!' : 'Goal conceded'); break;
+      case 'win': this._caption('Victory'); break;
+      case 'lose': this._caption('Defeat'); break;
+      case 'achievement': this._caption('Achievement unlocked'); break;
+      case 'overtime': this._caption('Overtime — golden goal'); break;
+      case 'budget': this._caption('Move budget exhausted'); break;
+    }
+  }
+
+  /** Start loading a clip (once) and return its cache entry. */
+  _loadSample(name) {
+    let entry = this.samples.get(name);
+    if (entry) return entry;
+    entry = { status: 'loading', buffer: null };
+    this.samples.set(name, entry);
+    fetch(`sfx/${name}.opus`)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
+      .then((ab) => this.ctx.decodeAudioData(ab))
+      .then((buf) => { entry.status = 'ready'; entry.buffer = buf; })
+      .catch(() => { entry.status = 'failed'; });
+    return entry;
+  }
+
+  /** Play a cached clip through the effects bus. False while loading/failed. */
+  _playSample(name) {
+    if (this._loadSample(name).status !== 'ready') return false;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.samples.get(name).buffer;
+    src.connect(this.buses.effects);
+    src.start();
+    return true;
+  }
+
   /** Map a logical event to a transient. `tier` scales emphasis. */
   event(name, opts = {}) {
     if (!this.ctx || this.ctx.state !== 'running') return;
+    this._captionFor(name, opts);
+    const clip = SFX_BY_EVENT[name];
+    if (clip && this._playSample(clip)) return;
     const t = this.ctx.currentTime;
     const fx = this.buses.effects;
     const v = this.rng.range(0.94, 1.06); // seeded pitch variant
     switch (name) {
       case 'ui': this._osc('triangle', 660 * v, t, 0.06, fx, 0.18); break;
       case 'ui-back': this._osc('triangle', 440 * v, t, 0.07, fx, 0.15); break;
-      case 'invalid': this._osc('square', 160, t, 0.12, fx, 0.12, 110); this._caption('Invalid action'); break;
+      case 'invalid': this._osc('square', 160, t, 0.12, fx, 0.12, 110); break;
       case 'strike': {
         const k = Math.min(1, (opts.speed ?? 80) / 260);
         this._noise(t, 0.08, fx, 0.25 + k * 0.3, 1800 + k * 2400, 2);
@@ -100,20 +163,19 @@ export class AudioEngine {
       }
       case 'wall': this._noise(t, 0.05, fx, 0.14, 3200 * v, 3); break;
       case 'obstacle': this._noise(t, 0.07, fx, 0.2, 1200 * v, 4); this._osc('sine', 500 * v, t, 0.08, fx, 0.15); break;
-      case 'countdown': this._osc('sine', 520, t, 0.12, fx, 0.3); this._caption(`Starting in ${opts.remaining}`); break;
-      case 'go': this._osc('sine', 880, t, 0.25, fx, 0.35); this._caption('Go!'); break;
+      case 'countdown': this._osc('sine', 520, t, 0.12, fx, 0.3); break;
+      case 'go': this._osc('sine', 880, t, 0.25, fx, 0.35); break;
       case 'goal': {
-        this._caption(opts.scorer === 0 ? 'Goal for you!' : 'Goal conceded');
         const base = opts.scorer === 0 ? [523, 659, 784] : [392, 330, 262];
         base.forEach((f, i) => this._osc('triangle', f, t + i * 0.09, 0.28, fx, 0.3));
         this._noise(t, 0.3, fx, 0.2, 900, 1);
         break;
       }
-      case 'win': [523, 659, 784, 1046].forEach((f, i) => this._osc('triangle', f, t + i * 0.12, 0.35, fx, 0.3)); this._caption('Victory'); break;
-      case 'lose': [392, 330, 262, 196].forEach((f, i) => this._osc('triangle', f, t + i * 0.12, 0.35, fx, 0.25)); this._caption('Defeat'); break;
-      case 'achievement': this._osc('sine', 1046, t, 0.15, fx, 0.25); this._osc('sine', 1568, t + 0.12, 0.3, fx, 0.22); this._caption('Achievement unlocked'); break;
-      case 'overtime': this._osc('sawtooth', 220, t, 0.4, fx, 0.2, 440); this._caption('Overtime — golden goal'); break;
-      case 'budget': this._osc('square', 240, t, 0.2, fx, 0.15, 180); this._caption('Move budget exhausted'); break;
+      case 'win': [523, 659, 784, 1046].forEach((f, i) => this._osc('triangle', f, t + i * 0.12, 0.35, fx, 0.3)); break;
+      case 'lose': [392, 330, 262, 196].forEach((f, i) => this._osc('triangle', f, t + i * 0.12, 0.35, fx, 0.25)); break;
+      case 'achievement': this._osc('sine', 1046, t, 0.15, fx, 0.25); this._osc('sine', 1568, t + 0.12, 0.3, fx, 0.22); break;
+      case 'overtime': this._osc('sawtooth', 220, t, 0.4, fx, 0.2, 440); break;
+      case 'budget': this._osc('square', 240, t, 0.2, fx, 0.15, 180); break;
     }
   }
 
