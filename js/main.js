@@ -8,8 +8,8 @@ import { createAI } from './ai.js';
 import { Renderer, toWorld, QUALITY_TIERS } from './render.js';
 import { UI } from './ui.js';
 import { AudioEngine } from './audio.js';
-import { Platform } from './platform.js';
-import { HostedClient } from './net.js';
+import { Platform } from './platform.js?v=production-qa-1';
+import { HostedClient } from './net.js?v=production-qa-1';
 import {
   JOURNEY, CHALLENGES, LESSONS, dailyConfig, dailyKey, validateContent,
   themeById, CONTENT_VERSION, RULESET_ID,
