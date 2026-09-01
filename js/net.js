@@ -29,6 +29,12 @@ export class HostedClient {
 
   connect() {
     if (this.ws && this.ws.readyState <= 1) return Promise.resolve();
+    // UUID static-host subdomains do not expose a game WebSocket endpoint.
+    // Reject without constructing a socket, which would itself emit a browser
+    // console error; solo play remains fully available.
+    if (/^[0-9a-f-]{36}\.starhermit\.com$/i.test(location.hostname)) {
+      return Promise.reject(new Error('static-host'));
+    }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`${proto}://${location.host}/ws`);

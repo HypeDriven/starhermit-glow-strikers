@@ -109,7 +109,9 @@ export class Platform {
       if (!res.ok) throw new Error(String(res.status));
       const body = await res.json();
       const t1 = Date.now();
-      this.timeOffset = body.now - Math.round((t0 + t1) / 2);
+      const serverNow = typeof body.now === 'number' ? body.now : body.serverTime;
+      if (typeof serverNow !== 'number') throw new Error('invalid time response');
+      this.timeOffset = serverNow - Math.round((t0 + t1) / 2);
       this.timeSynced = true;
       this.online = true;
     } catch {
