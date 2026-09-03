@@ -32,7 +32,7 @@ simulation, reconnect, and chat).
 ## Tests
 
 ```sh
-node --test test/
+node --test tests/
 ```
 
 ## Layout

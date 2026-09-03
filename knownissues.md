@@ -8,10 +8,10 @@ alongside the game's own unit tests and live probing of the running server in he
 | Check | Result |
 | --- | --- |
 | `npm test` | **cannot run** — `npm error enoent Could not read package.json` (the game ships no `package.json`) |
-| `node --test test/` (the command the README documents) | **FAIL** — `Error: Cannot find module '/home/albert/games/glow-strikers/test'`, 0 pass / 1 fail |
-| `node --test test/*.mjs` (working invocation) | 25/25 pass, 0 failures |
-| `node test/rules.test.mjs` (working invocation) | 25/25 pass, 0 failures |
-| `node --check` on all modules (`js/*.js`, `server.js`, `test/rules.test.mjs`) | clean |
+| `node --test tests/` (the command the README documents) | **FAIL** — `Error: Cannot find module '/home/albert/games/glow-strikers/test'`, 0 pass / 1 fail |
+| `node --test tests/*.mjs` (working invocation) | 25/25 pass, 0 failures |
+| `node tests/rules.test.mjs` (working invocation) | 25/25 pass, 0 failures |
+| `node --check` on all modules (`js/*.js`, `server.js`, `tests/rules.test.mjs`) | clean |
 | `tests/e2e.mjs` | not present |
 | Headless-Chrome boot + play-through (served on :39402) | Boots to title, starts a match, HUD counts down and scores; **0** console errors, 0 failed requests |
 | API fuzzing (`/api/v1/*`, malformed bodies) | server stayed up |
@@ -77,17 +77,17 @@ alongside the game's own unit tests and live probing of the running server in he
 
 ### 3. No `package.json` — `npm test` cannot run, and the documented test command is broken
 
-- **Files:** missing `package.json`; `README.md:35-39` documents `node --test test/`
+- **Files:** missing `package.json`; `README.md:35-39` documents `node --test tests/`
 - **Trigger:** `npm test`, or the README's command, from the game directory.
 - **Behaviour:**
   - `npm test` → `npm error code ENOENT … Could not read package.json`.
-  - `node --test test/` → `Error: Cannot find module '/home/albert/games/glow-strikers/test'`,
+  - `node --test tests/` → `Error: Cannot find module '/home/albert/games/glow-strikers/test'`,
     reported as `1..1 / # fail 1`. On Node 22 a bare directory argument is resolved as a module path;
-    the working forms are `node --test test/*.mjs` or `node test/rules.test.mjs`.
+    the working forms are `node --test tests/*.mjs` or `node tests/rules.test.mjs`.
 - **Expected:** every other game in this batch ships a `package.json` with `"type": "module"` and a
   `test` script. Without one the module type also relies on Node's ESM auto-detection rather than being
   declared.
-- **Evidence:** the two error outputs above; `node --test test/*.mjs` passes 25/25, so the tests
+- **Evidence:** the two error outputs above; `node --test tests/*.mjs` passes 25/25, so the tests
   themselves are healthy — only the entry points are broken.
 
 ### 4. `leaveCurrentRoom` broadcasts `seat: -1` instead of the seat that was vacated
