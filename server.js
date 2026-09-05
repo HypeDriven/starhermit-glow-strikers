@@ -55,7 +55,12 @@ const server = http.createServer((req, res) => {
   }
 
   // Static files, confined to ROOT; index.html as default.
-  let p = decodeURIComponent(url.pathname);
+  let p;
+  try {
+    p = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400); return res.end('bad path');
+  }
   if (p === '/') p = '/index.html';
   const file = path.normalize(path.join(ROOT, p));
   if (!file.startsWith(ROOT) || file.includes(`${path.sep}.git`)) {
@@ -98,12 +103,13 @@ server.on('upgrade', (req, socket) => {
     room: null, seat: -1, name: 'Player', alive: true,
     buffer: Buffer.alloc(0), rate: { count: 0, resetAt: Date.now() + 1000 },
     chatTimes: [],
+    fragments: null, fragOp: 0, fragLen: 0,
   };
   socket.on('data', (d) => {
     client.buffer = Buffer.concat([client.buffer, d]);
     if (client.buffer.length > 1 << 20) return closeClient(client); // flood guard
     let frame;
-    while ((frame = readFrame(client))) handleFrame(client, frame);
+    while ((frame = readFrame(client))) handleIncoming(client, frame);
   });
   socket.on('close', () => onDisconnect(client));
   socket.on('error', () => onDisconnect(client));
@@ -277,6 +283,33 @@ function closeClient(client) {
   onDisconnect(client);
 }
 
+/** RFC 6455 §5.4 fragment reassembly. Control frames (8/9/10) are never
+ *  fragmented and pass straight through to handleFrame. A fragmented data
+ *  message is buffered until FIN=1, then handed to handleFrame as one frame
+ *  (total size still capped at MAX_MESSAGE to bound memory). */
+function handleIncoming(client, frame) {
+  const { fin, op, payload } = frame;
+  if (op === 8 || op === 9 || op === 10) return handleFrame(client, frame);
+  if (op === 0) {
+    // Continuation frame; a message must have started first.
+    if (!client.fragments) return;
+    client.fragments.push(payload);
+    client.fragLen += payload.length;
+    if (client.fragLen > MAX_MESSAGE) { client.fragments = null; return; }
+    if (!fin) return;
+    const complete = { fin: true, op: client.fragOp, payload: Buffer.concat(client.fragments) };
+    client.fragments = null; client.fragLen = 0;
+    return handleFrame(client, complete);
+  }
+  // Start of a new data message.
+  if (!fin) {
+    client.fragments = [payload]; client.fragOp = op; client.fragLen = payload.length;
+    if (client.fragLen > MAX_MESSAGE) client.fragments = null;
+    return;
+  }
+  return handleFrame(client, frame);
+}
+
 function handleFrame(client, frame) {
   const { op, payload } = frame;
   if (op === 8) return closeClient(client);          // close
@@ -368,11 +401,12 @@ function handleFrame(client, frame) {
 function leaveCurrentRoom(client) {
   const room = client.room;
   if (!room) return;
+  const vacated = client.seat; // the seat being vacated, before it is reset
   if (room.seats[client.seat] === client) room.seats[client.seat] = null;
   if (room.tokens[client.seat] === client.id) room.tokens[client.seat] = null;
   client.room = null;
   client.seat = -1;
-  broadcast(room, { op: 'peer-left', seat: client.seat });
+  broadcast(room, { op: 'peer-left', seat: vacated });
   if (!room.seats.some(Boolean)) destroyRoom(room);
 }
 

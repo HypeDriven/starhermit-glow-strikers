@@ -311,6 +311,7 @@ function stepActive(state, events) {
       const rvx = puck.vx - m.vx, rvy = puck.vy - m.vy;
       const vn = rvx * nx + rvy * ny;
       if (vn < 0) {
+        const inVy = puck.vy; // pre-collision velocity (the puck's incoming direction)
         puck.vx -= (1 + MALLET_REST) * vn * nx;
         puck.vy -= (1 + MALLET_REST) * vn * ny;
         [puck.vx, puck.vy] = clampSpeed(puck.vx, puck.vy, MAX_PUCK_SPEED);
@@ -319,7 +320,9 @@ function stepActive(state, events) {
         if (towardOpp) {
           state.stats[i].shots++;
           // Save: intercepted a puck heading for own goal while deep in own half.
-          const wasThreat = i === 0 ? (puck.vy < 0 && puck.y < TABLE_H / 3) : (puck.vy > 0 && puck.y > TABLE_H * 2 / 3);
+          // The puck's incoming (pre-collision) direction decides whether it was
+          // a threat; its position at the intercept decides whether it was deep.
+          const wasThreat = i === 0 ? (inVy < 0 && puck.y < TABLE_H / 3) : (inVy > 0 && puck.y > TABLE_H * 2 / 3);
           if (wasThreat) state.stats[i].saves++;
         } else if (state.lastTouch === 1 - i) {
           state.stats[i].steals++;
@@ -364,7 +367,10 @@ function stepActive(state, events) {
   }
 
   // Move-limit terminal check (challenge rule): both budgets spent and puck slow.
-  if (state.moveBudget && state.moveBudget[0] <= 0 && state.moveBudget[1] <= 0 && speed < 5) {
+  // Re-measure after collision resolution so the terminal reason is not based on
+  // a stale pre-collision speed (mallets/obstacles/walls may accelerate the puck).
+  const finalSpeed = Math.hypot(puck.vx, puck.vy);
+  if (state.moveBudget && state.moveBudget[0] <= 0 && state.moveBudget[1] <= 0 && finalSpeed < 5) {
     const [a, b] = state.scores;
     endMatch(state, a === b ? -1 : (a > b ? 0 : 1), TERMINAL.MOVE_LIMIT, events);
   }

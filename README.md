@@ -32,7 +32,8 @@ simulation, reconnect, and chat).
 ## Tests
 
 ```sh
-node --test tests/
+npm test            # unit tests (node --test tests/rules.test.mjs)
+npm run test:e2e    # headless-Chrome browser playthrough
 ```
 
 ## Layout
