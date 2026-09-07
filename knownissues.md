@@ -7,7 +7,68 @@ Re-verification pass 2026-09-04. Confirmed defects 1-6 re-checked against the cu
 were already fixed (uncommitted working-tree changes that match each documented "Expected"), so none
 required new code. See the **Resolved** section below.
 
-## Test results
+Review pass 2026-09-07 (Kimi Code). Fresh read of the full client + server source after the 09-04
+re-verification. New defects found and fixed; two previously "suspected" items are now resolved.
+See **Resolved (2026-09-07)** below.
+
+## Test results (2026-09-07)
+
+| Check | Result |
+| --- | --- |
+| `npm test` (`node --test tests/rules.test.mjs`) | **PASS** — 25/25 |
+| `npm run test:e2e` (`node tests/e2e.mjs`) | **PASS** — desktop + mobile playthroughs, no page errors |
+| `node --check` on all edited modules | clean |
+| Live `server.js` probe (HTTP 400/traversal, WS room, vs-AI match, 32-byte snapshots, input round-trip) | **PASS** |
+| Headless-Chrome hosted-pause smoke (Match Menu via Esc + HUD button, sim continues, settings round-trip, leave) | **PASS** |
+
+## Confirmed defects
+
+None open.
+
+## Resolved (2026-09-07)
+
+### A. Adaptive music never recovers after the tab is backgrounded — FIXED
+
+- **Was:** `js/audio.js` `tickMusic()` returned early whenever `ctx.state !== 'running'` without
+  rescheduling, so the first suspended tick (e.g. `visibilitychange` → `audio.suspend()`) permanently
+  killed the music loop while `musicState.playing` stayed true, blocking any restart.
+- **Fix:** the scheduler now re-arms its timer and skips the beat while suspended, so music resumes
+  with the AudioContext.
+
+### B. The HUD pause button and Esc were dead controls in hosted matches — FIXED
+
+- **Was:** `js/main.js` `pauseGame()` returned early for `mode === 'hosted'`; pressing the pause
+  button or Esc did nothing (violating one-input acknowledgment), and there was no in-match path to
+  settings/help/leave. The pause menu's Restart, had it been reachable, would have started a bogus
+  local match in hosted mode.
+- **Fix:** pause in hosted mode now opens a "Match Menu" overlay (Back to Match / Settings / Help /
+  Leave Match; no Restart — the match is server-owned) while the authoritative sim keeps running.
+  `resumeGame()` restores the `hosted` screen, keyboard/gamepad input is gated to the live screen,
+  and `ui.on('restart')` is guarded against hosted/null sessions.
+
+### C. Lesson fail/complete timers fired after the player left the lesson — FIXED
+
+- **Was:** `js/main.js` `updateLesson()`/`completeLesson()` used bare `setTimeout`s (1200/900 ms);
+  leaving to the title within the delay still triggered `startLesson()` or the results screen.
+- **Fix:** both callbacks now verify the session token and screen before acting.
+
+### D. Static-file confinement used a bare string prefix — FIXED (was "Suspected #2")
+
+- **Was:** `server.js` `file.startsWith(ROOT)` would pass a sibling directory whose name begins with
+  `glow-strikers`.
+- **Fix:** boundary check is now `file === ROOT || file.startsWith(ROOT + path.sep)`.
+
+### E. Binary snapshot packed player 1's score into 4 bits — FIXED (was "Suspected #1")
+
+- **Was:** `server.js` `encodeSnapshot` masked `scores[1]` to 0-15 to share a byte with the phase.
+- **Fix:** the snapshot is now 32 bytes — `scores[1]` gets a full byte and the phase its own byte;
+  `js/net.js` decodes the new layout. Both ends live in this repo, so the wire change is atomic.
+
+### F. Dead imports in `js/main.js` — FIXED
+
+- Removed unused `QUALITY_TIERS`, `themeById`, and `CHALLENGES` imports.
+
+## Test results (2026-09-04)
 
 | Check | Result |
 | --- | --- |
@@ -20,11 +81,7 @@ required new code. See the **Resolved** section below.
 | Corrupt-`localStorage` sweep (8 corruptions × 1 key, reload each time) | PASS — no page errors, game still renders every time |
 | Rapid-input + resize stress (90 key presses, 40 clicks, 5 viewport changes, 8 pause toggles) | PASS — 0 console errors |
 
-## Confirmed defects
-
-None. All six defects identified in the 2026-08-20 pass are resolved (see below).
-
-## Resolved
+## Resolved (2026-08-20 fixes, verified 2026-09-04)
 
 ### 1. A malformed percent-escape in the URL path kills the server process — RESOLVED
 
@@ -72,21 +129,14 @@ None. All six defects identified in the 2026-08-20 pass are resolved (see below)
 
 ## Suspected — not confirmed
 
-### 1. Binary snapshot packs player 1's score into 4 bits
+### ~~1. Binary snapshot packs player 1's score into 4 bits~~ — FIXED 2026-09-07
 
-- **File:** `server.js:235` — `buf.writeUInt8((s.scores[1] & 0x0f) | (phaseCode(s.phase) << 4), 30);`
-- **Concern:** player 0's score gets a full byte (`s.scores[0] & 0xff`) but player 1's is masked to
-  0-15, so a score of 16 would display as 0 for remote clients.
-- **Why unconfirmed:** the highest `targetScore` in shipped content is 9 (`js/content.js:225`), so the
-  wrap is unreachable with the content as authored. It is a latent asymmetry rather than a live bug.
+- Resolved; see "Resolved (2026-09-07)" item E. The snapshot is now 32 bytes with a full byte
+  each for `scores[1]` and the phase.
 
-### 2. Static-file boundary check is a string prefix, not a path boundary
+### ~~2. Static-file boundary check is a string prefix, not a path boundary~~ — FIXED 2026-09-07
 
-- **File:** `server.js:66` — `if (!file.startsWith(ROOT) || file.includes(`${path.sep}.git`))`
-- **Concern:** `ROOT = path.dirname(fileURLToPath(import.meta.url))` has no trailing separator, so a
-  sibling directory beginning with `glow-strikers` would pass the prefix test.
-- **Why unconfirmed:** no such sibling exists here and a live raw `GET /../fleet-signals/spec.md`
-  returned 404. Proving the escape would require creating a directory in `~/games`.
+- Resolved; see "Resolved (2026-09-07)" item D. The check now uses a `ROOT + path.sep` boundary.
 
 ### 3. Invalid-action accounting is incomplete
 
@@ -129,12 +179,15 @@ None. All six defects identified in the 2026-08-20 pass are resolved (see below)
 
 ## Not tested
 
-- **Hosted play over a live WebSocket match.** The room lifecycle (create/join/reconnect token,
-  `SEAT_GRACE_MS` forfeit, room janitor) and the WebSocket framing/continuation paths were fixed and
-  inspected statically, but no full hosted match was driven object-to-object. The `e2e.mjs` offline
-  pass exercises the lobby fallback only.
-- **`js/net.js`** — the hosted-play client — was not exercised.
+- ~~Hosted play over a live WebSocket match / `js/net.js`~~ — exercised 2026-09-07: a real
+  `server.js` room (create → start-vs-ai → binary input → 20 Hz 32-byte snapshots → mallet motion)
+  and a headless-Chrome hosted match through `net.js` including the pause menu. A full two-human
+  match and the reconnect-token path were still not driven end to end.
 - **Three.js render correctness** (`js/render.js`): only checked for absence of runtime errors under
   SwiftShader.
 - **Audio** (`js/audio.js`): headless Chrome blocks the AudioContext before a user gesture.
 - **Gamepad input path.**
+
+### Parent review: leaderboard score bounds — FIXED
+
+Local leaderboard validation now accepts mastery totals up to 3000 and signed scores for long mastery clears and daily losses. Unknown boards and out-of-range totals are rejected. Regression tests cover accepted and rejected scores, plus hosted snapshot scores above 15.

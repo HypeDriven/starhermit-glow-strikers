@@ -5,14 +5,14 @@
 import * as rules from './rules.js';
 import { Session } from './session.js';
 import { createAI } from './ai.js';
-import { Renderer, toWorld, QUALITY_TIERS } from './render.js';
+import { Renderer, toWorld } from './render.js';
 import { UI } from './ui.js';
 import { AudioEngine } from './audio.js';
 import { Platform } from './platform.js?v=production-qa-1';
 import { HostedClient } from './net.js?v=production-qa-1';
 import {
-  JOURNEY, CHALLENGES, LESSONS, dailyConfig, dailyKey, validateContent,
-  themeById, CONTENT_VERSION, RULESET_ID,
+  JOURNEY, LESSONS, dailyConfig, dailyKey, validateContent,
+  CONTENT_VERSION, RULESET_ID,
 } from './content.js';
 
 const DT = rules.DT;
@@ -285,7 +285,11 @@ function updateLesson(evts) {
   if (failed) {
     ls.done = true;
     ui.banner('Try again', true);
-    setTimeout(() => startLesson(L), 1200);
+    // Bail out if the player left or restarted the lesson during the delay.
+    const token = app.session;
+    setTimeout(() => {
+      if (app.session === token && (app.screen === 'playing' || app.screen === 'paused')) startLesson(L);
+    }, 1200);
     return;
   }
   if (done && L.goal.kind !== 'match') {
@@ -311,7 +315,9 @@ function completeLesson(lesson) {
   if (lesson.goal.kind !== 'match') {
     ui.banner('Lesson complete!', true);
     audio.event('win');
+    const token = app.session;
     setTimeout(() => {
+      if (app.session !== token || app.screen !== 'playing') return;
       const idx = LESSONS.indexOf(lesson);
       const next = LESSONS[idx + 1];
       ui.showResults({
@@ -372,8 +378,8 @@ window.addEventListener('keydown', (e) => {
   const k = platform.settings.keys;
   if (e.code === k.pause) {
     e.preventDefault();
-    if (app.screen === 'playing') pauseGame();
-    else if (app.screen === 'paused') resumeGame();
+    if (app.screen === 'playing' || app.screen === 'hosted') pauseGame();
+    else if (app.screen === 'paused' || app.screen === 'hosted-paused') resumeGame();
     return;
   }
   if (app.screen === 'hosted') {
@@ -435,7 +441,7 @@ function gamepadStep() {
     }
   }
   const start = gp.buttons[9]?.pressed;
-  if (start && !padPrev.start && app.screen === 'playing') pauseGame();
+  if (start && !padPrev.start && (app.screen === 'playing' || app.screen === 'hosted')) pauseGame();
   padPrev.start = start;
 }
 
@@ -467,17 +473,35 @@ function giveHint() {
 // Pause / resume / visibility
 // ---------------------------------------------------------------------------
 
+function showPauseOverlay() {
+  const hosted = app.mode === 'hosted';
+  ui.showPause(
+    `${app.matchCfg?.name ?? 'Match'} — ${app.mode}${hosted ? ' · the server clock keeps running' : ''}`,
+    { hosted },
+  );
+}
+
 function pauseGame() {
+  if (app.screen === 'hosted') {
+    // Hosted matches are server-authoritative: the sim never pauses, but the
+    // player still gets a menu (settings/help/leave) instead of a dead button.
+    app.screen = 'hosted-paused';
+    showPauseOverlay();
+    return;
+  }
   if (app.screen !== 'playing') return;
-  if (app.mode === 'hosted') return; // hosted clock is authoritative; use lobby to leave
   app.paused = true;
   app.screen = 'paused';
-  ui.showPause(`${app.matchCfg.name ?? 'Match'} — ${app.mode}`);
+  showPauseOverlay();
 }
 
 function resumeGame() {
-  app.paused = false;
-  app.screen = 'playing';
+  if (app.screen === 'hosted-paused') {
+    app.screen = 'hosted';
+  } else {
+    app.paused = false;
+    app.screen = 'playing';
+  }
   ui.hideScreens();
   ui.showHud(true);
 }
@@ -540,8 +564,10 @@ function frame(now) {
   } else if (app.mode === 'hosted' && net.snap) {
     // Hosted: inputs stream to the authoritative server; we interpolate
     // between the last two snapshots it broadcasts.
-    keyboardStep();
-    gamepadStep();
+    if (app.screen === 'hosted') {
+      keyboardStep();
+      gamepadStep();
+    }
     app.prevPos = net.prevSnap ? posFromSnap(net.prevSnap) : posFromSnap(net.snap);
     app.curPos = posFromSnap(net.snap);
     const interval = net.snapshotInterval();
@@ -767,7 +793,10 @@ function modeOf(content, cfg) {
 ui.on('back', () => goTitle());
 ui.on('pause', () => pauseGame());
 ui.on('resume', () => resumeGame());
-ui.on('restart', () => startMatch(app.matchCfg, app.mode, { lesson: app.lesson, noAI: app.mode === 'learn' }));
+ui.on('restart', () => {
+  if (app.mode === 'hosted' || !app.session) return; // hosted matches are server-owned
+  startMatch(app.matchCfg, app.mode, { lesson: app.lesson, noAI: app.mode === 'learn' });
+});
 ui.on('retry', () => {
   platform.track('retry', { content: app.matchCfg?.id });
   startMatch(app.matchCfg, app.mode, { lesson: app.lesson, noAI: app.mode === 'learn' });
@@ -792,12 +821,12 @@ ui.on('undo', () => doUndo());
 ui.on('show-settings', (opts) => ui.showSettings(opts ?? {}));
 ui.on('settings-back', (opts) => {
   applySettings();
-  if (opts?.from === 'pause') ui.showPause(app.matchCfg?.name ?? 'Match');
+  if (opts?.from === 'pause') showPauseOverlay();
   else goTitle();
 });
 ui.on('show-help', (opts) => ui.showHelp(opts ?? {}));
 ui.on('help-back', (opts) => {
-  if (opts?.from === 'pause') ui.showPause(app.matchCfg?.name ?? 'Match');
+  if (opts?.from === 'pause') showPauseOverlay();
   else goTitle();
 });
 ui.on('show-achievements', () => ui.showAchievements());

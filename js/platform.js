@@ -153,7 +153,11 @@ export class Platform {
   submitResult(board, entry) {
     if (!entry || entry.ruleset !== RULESET_ID) return null;
     if (entry.contentVersion !== CONTENT_VERSION) return null;   // stale
-    if (!Number.isInteger(entry.score) || entry.score < 0 || entry.score > 99) return null;
+    if (!['journey', 'daily', 'challenge'].includes(board)) return null;
+    // Mastery uses stars * 1000 - elapsed seconds; match boards use goal margin.
+    const minScore = board === 'journey' ? -1800 : -99;
+    const maxScore = board === 'journey' ? 3000 : 99;
+    if (!Number.isInteger(entry.score) || entry.score < minScore || entry.score > maxScore) return null;
     if (!Number.isInteger(entry.durationTicks) || entry.durationTicks < 60) return null;
     if (entry.durationTicks > 60 * 60 * 30) return null;         // implausible
     const e = { ...entry, submittedAt: this.now().toISOString() };

@@ -114,7 +114,7 @@ export class HostedClient {
     }
     // Binary snapshot frame.
     const v = new DataView(e.data);
-    if (v.byteLength !== 31 || v.getUint8(0) !== 2) return;
+    if (v.byteLength !== 32 || v.getUint8(0) !== 2) return;
     this.prevSnap = this.snap;
     this.prevSnapAt = this.snapAt;
     this.snap = {
@@ -124,8 +124,8 @@ export class HostedClient {
         { x: v.getFloat32(13, true), y: v.getFloat32(17, true) },
         { x: v.getFloat32(21, true), y: v.getFloat32(25, true) },
       ],
-      scores: [v.getUint8(29), v.getUint8(30) & 0x0f],
-      phase: PHASE_NAMES[v.getUint8(30) >> 4],
+      scores: [v.getUint8(29), v.getUint8(30)],
+      phase: PHASE_NAMES[v.getUint8(31)],
     };
     this.snapAt = performance.now();
     this.onSnapshot?.(this.snap, this.prevSnap, this.snapshotInterval());

@@ -8,6 +8,36 @@ import { Session } from '../js/session.js';
 import { createAI } from '../js/ai.js';
 import { validateContent, JOURNEY, CHALLENGES, dailyConfig, dailySeed, THEMES, LESSONS } from '../js/content.js';
 import { RngStream, hashValue } from '../js/rng.js';
+import { Platform } from '../js/platform.js';
+import { HostedClient } from '../js/net.js';
+import { RULESET_ID, CONTENT_VERSION } from '../js/content.js';
+
+test('local boards accept mastery totals and signed match scores within their limits', () => {
+  const platform = new Platform();
+  platform.persist = () => {};
+  const base = { ruleset: RULESET_ID, contentVersion: CONTENT_VERSION, durationTicks: 6000, boardKey: 'mastery' };
+  for (const [board, score] of [['journey', 2900], ['journey', -100], ['daily', -5], ['challenge', 45]]) {
+    assert.equal(platform.submitResult(board, { ...base, score })?.score, score);
+  }
+  for (const [board, score] of [['journey', 3001], ['daily', 100], ['unknown', 5]]) {
+    assert.equal(platform.submitResult(board, { ...base, score }), null);
+  }
+});
+
+test('hosted snapshots retain both scores above 15 separately from phase', () => {
+  const client = new HostedClient();
+  const frame = new ArrayBuffer(32);
+  const view = new DataView(frame);
+  view.setUint8(0, 2);
+  view.setUint32(1, 123, true);
+  view.setUint8(29, 18);
+  view.setUint8(30, 21);
+  view.setUint8(31, 3);
+  client._onMessage({ data: frame });
+  assert.deepEqual(client.snap.scores, [18, 21]);
+  assert.equal(client.snap.phase, 'terminal');
+  assert.equal(client.snap.tick, 123);
+});
 
 const T = rules;
 

@@ -11,7 +11,7 @@
 //   Binary gameplay frames (little-endian):
 //     client -> server  [u8 type=1][u32 tick][f32 x][f32 y]        (mallet target)
 //     server -> client  [u8 type=2][u32 tick][f32 puck x,y]
-//                       [f32 m0 x,y][f32 m1 x,y][u8 s0][u8 s1][u8 phase][u8 winner]
+//                       [f32 m0 x,y][f32 m1 x,y][u8 s0][u8 s1][u8 phase]
 
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
   }
   if (p === '/') p = '/index.html';
   const file = path.normalize(path.join(ROOT, p));
-  if (!file.startsWith(ROOT) || file.includes(`${path.sep}.git`)) {
+  if (!(file === ROOT || file.startsWith(ROOT + path.sep)) || file.includes(`${path.sep}.git`)) {
     res.writeHead(403); return res.end('forbidden');
   }
   fs.readFile(file, (err, data) => {
@@ -225,14 +225,15 @@ function startMatch(room, withAI = false) {
 }
 
 function encodeSnapshot(s) {
-  const buf = Buffer.alloc(31);
+  const buf = Buffer.alloc(32);
   buf.writeUInt8(2, 0);
   buf.writeUInt32LE(s.tick >>> 0, 1);
   buf.writeFloatLE(s.puck.x, 5); buf.writeFloatLE(s.puck.y, 9);
   buf.writeFloatLE(s.mallets[0].x, 13); buf.writeFloatLE(s.mallets[0].y, 17);
   buf.writeFloatLE(s.mallets[1].x, 21); buf.writeFloatLE(s.mallets[1].y, 25);
   buf.writeUInt8(s.scores[0] & 0xff, 29);
-  buf.writeUInt8((s.scores[1] & 0x0f) | (phaseCode(s.phase) << 4), 30);
+  buf.writeUInt8(s.scores[1] & 0xff, 30);
+  buf.writeUInt8(phaseCode(s.phase), 31);
   return buf;
 }
 

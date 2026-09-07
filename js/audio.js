@@ -206,7 +206,13 @@ export class AudioEngine {
     const bassNotes = [110, 110, 130.8, 98];
     let beat = 0;
     const tickMusic = () => {
-      if (!this.musicState.playing || c.state !== 'running') return;
+      if (!this.musicState.playing) return;
+      // Keep the scheduler alive across suspend/resume (tab backgrounding
+      // suspends the context); skip this beat but stay on the timer chain.
+      if (c.state !== 'running') {
+        this.musicState.timer = setTimeout(tickMusic, 300);
+        return;
+      }
       const t = c.currentTime;
       const bar = Math.floor(beat / 4) % 4;
       // bass stem always

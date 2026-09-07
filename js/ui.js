@@ -303,16 +303,17 @@ export class UI {
 
   // ---------------------------------------------------------------- pause
 
-  showPause(contextLabel) {
-    this.show('pause', () => el('section', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Paused' },
+  showPause(contextLabel, opts = {}) {
+    const label = opts.hosted ? 'Match Menu' : 'Paused';
+    this.show('pause', () => el('section', { role: 'dialog', 'aria-modal': 'true', 'aria-label': label },
       el('div', { class: 'panel' },
-        el('h2', { text: 'Paused' }),
+        el('h2', { text: label }),
         el('p', { class: 'dim', text: contextLabel }),
         el('div', { class: 'menu' },
-          el('button', { class: 'btn primary', onclick: () => this.emit('resume') }, 'Resume'),
+          el('button', { class: 'btn primary', onclick: () => this.emit('resume') }, opts.hosted ? 'Back to Match' : 'Resume'),
           el('button', { class: 'btn', onclick: () => this.emit('show-settings', { from: 'pause' }) }, 'Settings'),
           el('button', { class: 'btn', onclick: () => this.emit('show-help', { from: 'pause' }) }, 'How to Play'),
-          el('button', { class: 'btn', onclick: () => this.emit('restart') }, 'Restart'),
+          opts.hosted ? null : el('button', { class: 'btn', onclick: () => this.emit('restart') }, 'Restart'),
           el('button', { class: 'btn danger', onclick: () => this.emit('leave') }, 'Leave Match'),
         ),
       )));
