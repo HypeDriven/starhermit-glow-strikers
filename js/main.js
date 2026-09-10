@@ -75,6 +75,8 @@ const app = {
   keyTarget: null,
   pendingAchievements: [],
   hosted: { snap: null, prev: null, away: null },
+  lastSaves: 0,             // player 0 saves already cued (audio 'save')
+  clockWarned: false,       // one-shot 10 s clock warning per match
 };
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,8 @@ function startMatch(contentCfg, mode, meta = {}) {
   app.acc = 0;
   app.prevPos = app.curPos = snapshotPositions(app.session.state);
   app.keyTarget = null;
+  app.lastSaves = 0;
+  app.clockWarned = false;
 
   renderer.buildArena(contentCfg.themeId ?? platform.save.progression.cosmetics.theme, contentCfg.obstacles ?? []);
   renderer.transitionToPlay();
@@ -154,7 +158,7 @@ function endMatch() {
   const achievements = resolveProgression(won, draw, breakdown);
   const stars = app.mode === 'journey' && won ? computeStars(app.matchCfg, breakdown) : null;
 
-  audio.event(won ? 'win' : draw ? 'goal' : 'lose');
+  audio.event(won ? 'win' : draw ? 'draw' : 'lose');
   ui.announce(`${headlineFor(won, draw)}. Final score ${s.scores[0]} to ${s.scores[1]}.`, true);
   platform.persist();
 
@@ -525,8 +529,10 @@ function doUndo() {
   if (!(app.mode === 'practice' || app.mode === 'learn')) return;
   if (app.session?.undo()) {
     app.prevPos = app.curPos = snapshotPositions(app.session.state);
+    app.lastSaves = app.session.state.stats[0].saves;
     ui.setScores(app.session.state.scores[0], app.session.state.scores[1]);
     ui.caption('Undone');
+    audio.event('undo');
   } else {
     ui.caption('Nothing to undo');
   }
@@ -603,6 +609,9 @@ function handleEvents(events) {
         renderer.feedback('strike', { x: wx, y: 0, z: wz }, 2);
         audio.event('strike', { speed: e.speed });
         vibrate(8);
+        // A deep interception that the rules counted as a save gets its own cue.
+        if (e.player === 0 && s.stats[0].saves > app.lastSaves) audio.event('save');
+        app.lastSaves = s.stats[0].saves;
         break;
       }
       case 'wall': {
@@ -652,6 +661,11 @@ function updateHud() {
   ui.setClock(s.inOvertime ? 'OT' : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
   if (s.moveBudget) ui.setBudget(`Budget ${Math.round(s.moveBudget[0])} u`);
   ui.setScores(s.scores[0], s.scores[1]);
+  // One-shot warning when a timed match enters its final 10 seconds.
+  if (!app.clockWarned && s.timeLimitTicks && !s.inOvertime && s.phase === rules.PHASE.ACTIVE && ticks > 0 && ticks <= 600) {
+    app.clockWarned = true;
+    audio.event('clock-warning');
+  }
 }
 
 let lastBoardUpdate = 0;
@@ -914,6 +928,7 @@ net.on('resumed', () => {
   if (away) ui.toast(away); // "while you were away" summary
 });
 net.on('chat', (m) => {
+  audio.event('chat');
   lobby.chat.push(m);
   if (app.screen === 'lobby') refreshLobby();
   else ui.toast(`${m.from}: ${m.text.slice(0, 60)}`);
@@ -945,7 +960,7 @@ net.on('result', (m) => {
   const b = m.result.breakdown;
   const me = net.seat, opp = 1 - net.seat;
   const won = b.winner === me;
-  audio.event(won ? 'win' : 'lose');
+  audio.event(won ? 'win' : b.winner === -1 ? 'draw' : 'lose');
   ui.showResults({
     headline: won ? 'Victory' : b.winner === -1 ? 'Draw' : 'Defeat',
     sub: `Hosted room ${net.room} · authoritative hash ${m.result.finalHash}`,

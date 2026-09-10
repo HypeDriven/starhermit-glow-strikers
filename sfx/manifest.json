@@ -82,5 +82,35 @@
     "seconds": 1,
     "prompt": "Hollow coin-empty clunk, a dull mechanical thunk for running out of moves",
     "event": "budget"
+  },
+  {
+    "name": "clock-warning",
+    "seconds": 2,
+    "prompt": "Urgent electronic double beep alarm, two quick high pips from a digital sports scoreboard timer warning that time is nearly up",
+    "event": "clock-warning"
+  },
+  {
+    "name": "save-block",
+    "seconds": 1,
+    "prompt": "Solid rubbery thump of a plastic paddle blocking a fast sliding puck, a firm padded stop with a short low resonance",
+    "event": "save"
+  },
+  {
+    "name": "draw-sting",
+    "seconds": 2,
+    "prompt": "Neutral two-note synthesizer chime that ends unresolved, an even electronic tone for a tied result with a soft fade",
+    "event": "draw"
+  },
+  {
+    "name": "undo-rewind",
+    "seconds": 1,
+    "prompt": "Quick reverse tape rewind zip, a short rising electronic swoosh played backwards",
+    "event": "undo"
+  },
+  {
+    "name": "chat-ping",
+    "seconds": 1,
+    "prompt": "Soft glassy notification ping, a single gentle bell tone for an incoming message",
+    "event": "chat"
   }
 ]

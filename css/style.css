@@ -247,6 +247,20 @@ body.reduced-motion .screen { backdrop-filter: none; }
 }
 .title-sub { text-align: center; color: var(--text-dim); margin-top: 0; }
 
+/* Authored key art (assets/key-art.webp) and results illustrations; hidden if the file fails. */
+.title-art, .result-art {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  margin: 0 0 12px;
+  background: var(--bg);
+}
+.title-art { max-height: 150px; }
+.result-art { max-height: 130px; }
+.title-art[hidden], .result-art[hidden] { display: none; }
+
 .menu { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 
 .btn {
@@ -445,10 +459,14 @@ body.reduced-motion .toast { animation: none; }
 @media (orientation: portrait) and (max-width: 700px) {
   #hud-objective { font-size: 0.75rem; max-width: 30ch; }
   .panel { padding: 16px; }
+  .title-art { max-height: 110px; }
+  .result-art { max-height: 100px; }
 }
 /* Landscape mobile: narrow status rail, ≥44px targets with 8px separation. */
 @media (orientation: landscape) and (max-height: 500px) {
   #hud-top { gap: 8px; }
   .panel { max-height: 96vh; padding: 14px; }
   .menu { gap: 8px; }
+  .title-art { max-height: 70px; }
+  .result-art { max-height: 60px; }
 }

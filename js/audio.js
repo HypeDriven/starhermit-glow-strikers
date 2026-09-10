@@ -23,6 +23,11 @@ const SFX_BY_EVENT = {
   achievement: 'achievement-chime',
   overtime: 'overtime-siren',
   budget: 'budget-empty',
+  'clock-warning': 'clock-warning',
+  save: 'save-block',
+  draw: 'draw-sting',
+  undo: 'undo-rewind',
+  chat: 'chat-ping',
 };
 
 export class AudioEngine {
@@ -115,6 +120,9 @@ export class AudioEngine {
       case 'achievement': this._caption('Achievement unlocked'); break;
       case 'overtime': this._caption('Overtime — golden goal'); break;
       case 'budget': this._caption('Move budget exhausted'); break;
+      case 'clock-warning': this._caption('10 seconds left'); break;
+      case 'save': this._caption('Save!'); break;
+      case 'draw': this._caption('Draw'); break;
     }
   }
 
@@ -176,6 +184,11 @@ export class AudioEngine {
       case 'achievement': this._osc('sine', 1046, t, 0.15, fx, 0.25); this._osc('sine', 1568, t + 0.12, 0.3, fx, 0.22); break;
       case 'overtime': this._osc('sawtooth', 220, t, 0.4, fx, 0.2, 440); break;
       case 'budget': this._osc('square', 240, t, 0.2, fx, 0.15, 180); break;
+      case 'clock-warning': this._osc('square', 1320, t, 0.08, fx, 0.18); this._osc('square', 1320, t + 0.14, 0.08, fx, 0.18); break;
+      case 'save': this._noise(t, 0.09, fx, 0.28, 700 * v, 2); this._osc('sine', 140 * v, t, 0.14, fx, 0.3, 70); break;
+      case 'draw': [392, 440].forEach((f, i) => this._osc('triangle', f, t + i * 0.16, 0.4, fx, 0.25)); break;
+      case 'undo': this._osc('sine', 300 * v, t, 0.14, fx, 0.18, 900); break;
+      case 'chat': this._osc('sine', 1318, t, 0.12, fx, 0.16); break;
     }
   }
 

@@ -20,6 +20,14 @@ function el(tag, attrs = {}, ...children) {
   return e;
 }
 
+// Actions that step backwards get the quieter descending tap instead of the standard UI tap.
+const BACK_ACTIONS = new Set(['back', 'settings-back', 'help-back', 'leave', 'lobby-leave']);
+
+// Authored illustrations (assets/); each <img> hides itself if the file fails to load.
+function artImg(cls, name) {
+  return el('img', { class: cls, src: `assets/${name}.webp`, alt: '', onerror: (e) => { e.target.hidden = true; } });
+}
+
 const TERMINAL_LABEL = {
   [TERMINAL.TARGET_SCORE]: 'Target score reached',
   [TERMINAL.TIME_LIMIT]: 'Time limit',
@@ -64,7 +72,7 @@ export class UI {
   on(action, fn) { (this.handlers[action] ??= []).push(fn); return this; }
   emit(action, data) {
     this.audio?.ensure();
-    if (action !== 'settings-preview') this.audio?.event('ui');
+    if (action !== 'settings-preview') this.audio?.event(BACK_ACTIONS.has(action) ? 'ui-back' : 'ui');
     for (const fn of this.handlers[action] ?? []) fn(data);
   }
 
@@ -165,6 +173,7 @@ export class UI {
           el('p', { text: `Best streak: ${p.bestStreak}` }),
         ),
         el('div', {},
+          artImg('title-art', 'key-art'),
           el('h1', { class: 'title-logo', text: 'GLOW STRIKERS' }),
           el('p', { class: 'title-sub', text: 'Defend your goal. Strike the light.' }),
           el('div', { class: 'menu', role: 'navigation', 'aria-label': 'Main menu' },
@@ -340,8 +349,11 @@ export class UI {
         el('td', { text: 'Duration' }),
         el('td', { colspan: 2, text: `${Math.round(breakdown.players[0].elapsedTicks / 60)}s · ${TERMINAL_LABEL[breakdown.reason] ?? breakdown.reason}` }))),
     );
+    const art = headline === 'Victory' || headline === 'Lesson complete' ? 'results-victory'
+      : headline === 'Defeat' ? 'results-defeat' : null;
     this.show('results', () => el('section', { role: 'dialog', 'aria-label': 'Match results' },
       el('div', { class: 'panel' },
+        art ? artImg('result-art', art) : null,
         el('h2', { class: 'center', text: headline }),
         sub ? el('p', { class: 'center dim', text: sub }) : null,
         stars != null ? el('p', { class: 'center', style: 'font-size:1.6rem;color:var(--accent-gold)', text: '★'.repeat(stars) + '☆'.repeat(3 - stars) }) : null,

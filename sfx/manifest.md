@@ -18,3 +18,8 @@ Generated with MOSS-SoundEffect v2.0, 48 kHz mono Opus (96 kbps VBR, loudness-no
 | achievement-chime.opus | achievement | Bright two-note glockenspiel achievement chime with a light magical sparkle |
 | overtime-siren.opus | overtime | Rising arena siren wail, a tense hockey overtime alarm building urgency |
 | budget-empty.opus | budget | Hollow coin-empty clunk, a dull mechanical thunk for running out of moves |
+| clock-warning.opus | clock-warning | Urgent electronic double beep alarm, two quick high pips from a digital sports scoreboard timer warning that time is nearly up |
+| save-block.opus | save | Solid rubbery thump of a plastic paddle blocking a fast sliding puck, a firm padded stop with a short low resonance |
+| draw-sting.opus | draw | Neutral two-note synthesizer chime that ends unresolved, an even electronic tone for a tied result with a soft fade |
+| undo-rewind.opus | undo | Quick reverse tape rewind zip, a short rising electronic swoosh played backwards |
+| chat-ping.opus | chat | Soft glassy notification ping, a single gentle bell tone for an incoming message |

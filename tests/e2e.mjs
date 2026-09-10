@@ -57,6 +57,7 @@ const MIME = {
   '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.glb': 'model/gltf-binary',
   '.woff2': 'font/woff2', '.ts': 'text/plain; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.webp': 'image/webp',
 };
 
 // Benign GPU/swiftshader noise (from tools/production_game_audit.mjs).
