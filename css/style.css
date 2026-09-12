@@ -230,7 +230,10 @@ body.reduced-motion .screen { backdrop-filter: none; }
   }
   .panel.with-rails > .rail { display: block; }
   .panel p, .panel li { max-width: 70ch; }
+  .more-row { display: none; }
 }
+.more-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.more-row .btn { flex: 1 1 40%; }
 .rail { display: none; color: var(--text-dim); font-size: 0.9rem; }
 .rail h3 { color: var(--text); font-size: 0.95rem; margin-bottom: 6px; }
 

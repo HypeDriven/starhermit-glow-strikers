@@ -199,6 +199,14 @@ export class UI {
             el('button', { class: 'btn', onclick: () => this.emit('show-practice') }, 'Practice'),
             el('button', { class: 'btn', onclick: () => this.emit('show-lobby') }, 'Hosted Play'),
           ),
+          // Compact layouts hide the rails: the same secondary actions live in
+          // a "More" row under the main menu there.
+          el('div', { class: 'menu more-row', role: 'navigation', 'aria-label': 'More' },
+            el('button', { class: 'btn small', onclick: () => this.emit('show-achievements') }, 'Achievements'),
+            el('button', { class: 'btn small', onclick: () => this.emit('show-leaderboard') }, 'Leaderboards'),
+            el('button', { class: 'btn small', onclick: () => this.emit('show-settings') }, 'Settings'),
+            el('button', { class: 'btn small', onclick: () => this.emit('show-help') }, 'How to Play'),
+          ),
         ),
         el('div', { class: 'rail' },
           el('h3', { text: 'More' }),
@@ -356,7 +364,7 @@ export class UI {
         el('td', { text: String(fn(breakdown.players[1])) })))),
       el('tfoot', {}, el('tr', {},
         el('td', { text: 'Duration' }),
-        el('td', { colspan: 2, text: `${Math.round(breakdown.players[0].elapsedTicks / 60)}s · ${TERMINAL_LABEL[breakdown.reason] ?? breakdown.reason}` }))),
+        el('td', { colspan: 2, text: `${Math.round(breakdown.players[0].elapsedTicks / 60)}s${breakdown.reason ? ` · ${TERMINAL_LABEL[breakdown.reason] ?? breakdown.reason}` : headline === 'Lesson complete' ? ' · Lesson objective completed' : ''}` }))),
     );
     const art = headline === 'Victory' || headline === 'Lesson complete' ? 'results-victory'
       : headline === 'Defeat' ? 'results-defeat' : null;
