@@ -157,6 +157,14 @@ export class UI {
 
   setBoardState(text) { $('#boardstate-text').textContent = text; }
 
+  /** Update the title-screen identity/sync line in place (no re-render). */
+  setAccountLine(text) {
+    const line = $('#account-line');
+    if (!line) return;
+    line.textContent = text;
+    line.hidden = !text;
+  }
+
   // ---------------------------------------------------------------- title
 
   showTitle(progress) {
@@ -176,6 +184,7 @@ export class UI {
           artImg('title-art', 'key-art'),
           el('h1', { class: 'title-logo', text: 'GLOW STRIKERS' }),
           el('p', { class: 'title-sub', text: 'Defend your goal. Strike the light.' }),
+          el('p', { class: 'dim', id: 'account-line', text: this.platform.accountLine(), hidden: !this.platform.accountLine() }),
           el('div', { class: 'menu', role: 'navigation', 'aria-label': 'Main menu' },
             el('button', { class: 'btn primary', onclick: () => this.emit('quick-play') },
               'Play', el('span', { class: 'sub', text: 'Jump straight into a match' })),
@@ -295,7 +304,7 @@ export class UI {
           el('div', { class: 'meta-cell' }, el('b', { text: `First to ${cfg.targetScore}` }), 'Win condition'),
           el('div', { class: 'meta-cell' }, el('b', { text: mins }), 'Expected duration'),
           el('div', { class: 'meta-cell' }, el('b', { text: cfg.players ?? '1 vs AI' }), 'Players'),
-          el('div', { class: 'meta-cell' }, el('b', { text: cfg.ranked ? 'Ranked' : 'Unranked' }), cfg.ranked ? 'Counts on boards' : 'No rating effect'),
+          el('div', { class: 'meta-cell' }, el('b', { text: cfg.ranked ? 'Recorded' : 'Unranked' }), cfg.ranked ? 'Counts on your board' : 'No rating effect'),
         ),
         cfg.extras ?? null,
         el('div', { class: 'btn-row' },
@@ -492,21 +501,33 @@ export class UI {
       )));
   }
 
-  showLeaderboard(dailyEntries = [], journeyEntries = []) {
+  showLeaderboard(dailyEntries = [], journeyEntries = [], platform = null) {
     const entryRow = (e) => el('div', { class: 'list-item' },
-      el('span', { text: e.name ?? 'You' }),
-      el('span', { class: 'dim', text: `${Math.round(e.durationTicks / 60)}s` }),
+      el('span', { text: e.you ? `${e.name} (you)` : (e.name ?? 'You') }),
+      el('span', { class: 'dim', text: `${Math.round((e.durationTicks ?? e.duration ?? 0) / 60)}s` }),
       el('span', { class: 'stars', text: `${e.score}` }));
+    const platformSection = platform === 'loading'
+      ? [el('h3', { text: 'Platform leaderboard' }), el('p', { class: 'dim', text: 'Loading…' })]
+      : platform && (platform.entries.length || platform.leaderboardId)
+        ? [
+            el('h3', { text: 'Platform leaderboard' }),
+            platform.entries.length
+              ? el('div', { class: 'list' }, platform.entries.map(entryRow))
+              : el('p', { class: 'dim', text: 'No entries yet today.' }),
+          ]
+        : platform
+          ? [el('h3', { text: 'Platform leaderboard' }), el('p', { class: 'dim', text: 'No platform board for this game — your records below are kept on this device and mirrored to your cloud save.' })]
+          : [];
     this.show('leaderboard', () => el('section', { 'aria-label': 'Leaderboards' },
       el('div', { class: 'panel' },
         el('h2', { text: 'Leaderboards' }),
-        el('h3', { text: 'Daily (shared seed)' }),
+        ...platformSection,
+        el('h3', { text: 'Personal best — daily (shared seed)' }),
         dailyEntries.length ? el('div', { class: 'list' }, dailyEntries.map(entryRow))
           : el('p', { class: 'dim', text: 'No daily results yet — play today’s seed.' }),
-        el('h3', { text: 'Journey mastery' }),
+        el('h3', { text: 'Personal best — journey mastery' }),
         journeyEntries.length ? el('div', { class: 'list' }, journeyEntries.map(entryRow))
           : el('p', { class: 'dim', text: 'Clear a Mastery stage to post a time.' }),
-        el('p', { class: 'dim', text: 'Hosted sessions use server-authoritative boards.' }),
         this._backRow(),
       )));
   }
@@ -514,13 +535,18 @@ export class UI {
   // ---------------------------------------------------------------- lobby
 
   showLobby(state) {
-    // state: { status, roomCode, players, chat: [{from,text}], error }
+    // state: { status, roomCode, joined, rooms, players, chat: [{from,text}] }
     this.show('lobby', () => {
       const chatLog = el('div', { class: 'chat-log', id: 'chat-log', role: 'log', 'aria-label': 'Lobby chat' },
         (state.chat ?? []).map(m => el('p', {}, el('b', { text: `${m.from}: ` }), m.text)));
       const input = el('input', { type: 'text', maxlength: 200, 'aria-label': 'Chat message', placeholder: 'Message (10/min max)' });
       const joinInput = el('input', { type: 'text', maxlength: 5, placeholder: 'CODE', 'aria-label': 'Room code',
         style: 'text-transform:uppercase;width:90px' });
+      const joinControls = state.rooms
+        ? el('button', { class: 'btn', onclick: () => this.emit('lobby-quick-join') }, 'Quick Join')
+        : el('div', { style: 'display:flex;gap:6px;flex:1' },
+            joinInput,
+            el('button', { class: 'btn', onclick: () => this.emit('lobby-join', joinInput.value.trim().toUpperCase()) }, 'Join'));
       return el('section', { 'aria-label': 'Hosted play lobby' },
         el('div', { class: 'panel' },
           el('h2', { text: 'Hosted Play' }),
@@ -532,14 +558,12 @@ export class UI {
               el('span', { text: p }),
             ))),
           el('div', { class: 'btn-row' },
-            !state.roomCode ? el('button', { class: 'btn primary', onclick: () => this.emit('lobby-create') }, 'Create Room') : null,
-            !state.roomCode ? el('div', { style: 'display:flex;gap:6px;flex:1' },
-              joinInput,
-              el('button', { class: 'btn', onclick: () => this.emit('lobby-join', joinInput.value.trim().toUpperCase()) }, 'Join')) : null,
+            !state.joined ? el('button', { class: 'btn primary', onclick: () => this.emit('lobby-create') }, 'Create Room') : null,
+            !state.joined ? joinControls : null,
             state.canStartAI ? el('button', { class: 'btn', onclick: () => this.emit('lobby-start-ai') }, 'Start vs AI') : null,
-            el('button', { class: 'btn danger', onclick: () => this.emit('lobby-leave') }, state.roomCode ? 'Leave Room' : 'Back'),
+            el('button', { class: 'btn danger', onclick: () => this.emit('lobby-leave') }, state.joined ? 'Leave Room' : 'Back'),
           ),
-          state.roomCode ? el('details', { class: 'chat-panel' },
+          state.joined ? el('details', { class: 'chat-panel' },
             el('summary', { text: 'Chat' }),
             chatLog,
             el('form', {

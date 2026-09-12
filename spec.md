@@ -30,8 +30,8 @@ File map (everything the game ships or runs):
 | `js/render.js` | Three.js arena, quality tiers, camera framing, particle pool, picking plane, bloom composer |
 | `js/ui.js` | DOM screens, HUD bindings, captions/announcements, settings, lobby, results |
 | `js/audio.js` | WebAudio buses, clip playback from `sfx/`, synthesized fallbacks, ambience pad, adaptive music |
-| `js/platform.js` | Settings, checksummed save, server time sync, achievements, local leaderboards, presence |
-| `js/net.js` | Hosted-play WebSocket client (JSON control + binary gameplay frames, reconnect) |
+| `js/platform.js` | Settings, checksummed save (localStorage, cloud-mirrored when hosted), server time sync, achievements, local leaderboards, StarHermit hosted adapter (launch token, profile nickname, cloud save, read-only platform boards), dev-only presence |
+| `js/net.js` | Hosted-play transports (dev-server WebSocket client + host-routed realtime-rooms client; JSON control + binary gameplay frames, reconnect) |
 | `js/main.js` | Boot, app state machine, input, main loop, mode wiring, hosted-play glue, `window.__gs` test hook |
 | `server.js` | Zero-dependency static server + `/api/v1/*` + RFC 6455 WebSocket rooms running the same rules engine |
 | `sfx/*.opus`, `sfx/manifest.txt` | 19 authored clips and the canonical event binding table (`manifest.json` feeds the generator, `manifest.md` is its log) |
@@ -105,7 +105,7 @@ Local boards (`Platform.submitResult`) reject wrong rulesets or content versions
 | Challenges | 6 fixed cards | 0.30–0.75 | per card | yes | Blitz Clock (3–0 in 60 s, no overtime), Tight Ledger (1500-unit budget, first to 2), Pinball Hive, Perfect Wall (shutout: any concession forfeits), Long Night (first to 9, skill 0.75), Needle Gates (gates, 90 s) |
 | Learn | 6 lessons | none (lesson 6: skill 0.25) | goal-driven | no | each lesson requires the action; completing all six sets `tutorialDone` and unlocks Quick Learner |
 | Practice | random seed | Relaxed 0.25 / Club 0.50 / Pro 0.75 / Legend 0.92 | first to 5 | no | Restart and Undo available |
-| Hosted Play | server room code | second human, or server AI at 0.55 | first to 5, 180 s, golden goal | server-owned result | requires `server.js`; lobby chat |
+| Hosted Play | platform room (quick-join) or dev room code | second human, or host/server AI at 0.55 | first to 5, 180 s, golden goal | server/host-owned result | on-platform uses StarHermit realtime rooms; local dev uses `node server.js`; lobby chat |
 
 **Journey curve** (`buildJourney`): stages sit in five bands of eight. AI skill = min(0.95, 0.18 + 0.02·i) (+0.08 on mastery). Layouts progress none → pillars → gates → diamonds → cross → hive by band, stepping early in the last two stages of each band. Band 2+ adds a clock, max(75, 150 − 2·i) seconds. Band 3+ adds a player-only travel budget on every third stage, max(2600, 5200 − 60·i) units. Mastery stages (every 8th) play to 7 and post to the journey board. Each band uses the next of the five themes.
 
@@ -202,16 +202,20 @@ The shipped build is **English only**: all strings are literals in `js/ui.js`, `
 
 ## 12. StarHermit integration
 
-`starhermit.txt` declares `name=Glow Strikers`, `launch=index.html`, `owner=…`, `server=server.js`, `cover=coverart.png`. The platform launches `index.html`; a `?token=` launch parameter is read into memory and stripped from the URL, never persisted or transmitted.
+`starhermit.txt` declares `name=Glow Strikers`, `launch=index.html`, `owner=…`, `server=server.js`, `cover=coverart.png`. The platform launches `index.html`.
 
-Used: the **server script** slot (`server.js`) for hosted rooms over `/ws`, server time (`GET /api/v1/time`, round-trip adjusted, drives the daily countdown), and a presence heartbeat (`POST /api/v1/presence` every 30 s while online). `server.js` also exposes `GET /api/v1/rooms` (open room codes), which the client does not call. On UUID static-host subdomains (`<uuid>.starhermit.com`) the client skips the socket entirely and the lobby explains that solo modes remain available. Multiplayer therefore coordinates only through this repo's own server script, in line with the platform's one-server-per-game convention (see https://wiki.starhermit.com/).
+Hosted mode activates iff a launch token is present: it arrives in the URL fragment `#game_token=<jwt>` (read once, then stripped; query `?token=`/`?launch=`/`?launch_token=` remain for local dev), is held in memory only, and its payload supplies `sub` (user id) and `game_scope` (the game slug). Every platform REST call sends `Authorization: Bearer`; the token is re-minted every 45 min via `POST /api/v1/games/{slug}/launch-token` (60 s retry).
 
-Not used: platform identity/profile, platform leaderboards and achievements (both are local in `localStorage`), cloud saves, invitations, matchmaking, moderation APIs. Telemetry is consent-gated and only ever queued in memory (max 50 events); nothing is uploaded.
+Used when hosted: account identity (`GET /api/v1/users/{sub}/profile` → nickname, `"Player " + id8` fallback; never usernames, never `/api/v1/me`) shown on the title screen and used for board entries and hosted play; the cloud save slot `GET/PUT /api/v1/me/cloud-saves/{slug}` (zip+base64 mirror of the checksummed save doc — remote wins on boot, 2 s debounce + pagehide flush, sync status on the title line; localStorage stays the offline cache); the platform leaderboard read (`GET /api/v1/games/{slug}` → `leaderboardId` → `entries`, nicknames resolved, read-only — clients can never submit); and realtime-rooms multiplayer (below). Server time (`GET /api/v1/time`, round-trip adjusted, drives the daily countdown) is used in both modes and falls back to the local clock.
+
+Hosted Play on-platform runs on StarHermit realtime rooms (host-routed): the lobby is REST (`POST /api/v1/realtime/rooms` + `/open`, `quick-join`, `leave`, `mine`, `result`), the transport is `/ws/v1/realtime?roomId=&access_token=` with the platform's 16-byte sender prefix stripped from binary frames (8 KB cap). The host player's browser runs the same authoritative rules engine as `server.js` and broadcasts the same 32-byte snapshots; guests send their existing 13-byte input frames (≤30 msg/s). Local dev play (`node server.js`) still uses its own RFC 6455 `/ws` protocol with room codes.
+
+Not used: score submission to platform leaderboards (script/elo-owned; personal bests stay local + cloud-mirrored), server-side achievements (local only, part of the save doc), invitations/matchmaking beyond quick-join, moderation APIs, presence/telemetry uploads (the dev server's `POST /api/v1/presence` heartbeat runs only in local dev). Telemetry is consent-gated and only ever queued in memory (max 50 events); nothing is uploaded.
 
 ## 13. Technical architecture
 
 - **Loop** (`frame`): accumulator fixed-step at 60 Hz (max 100 ms per frame, 85 % speed with timing assist); per tick: keyboard/gamepad → AI move → `Session.tick` → events → lesson evaluation; render interpolates between the previous and current position snapshots with `alpha = acc / DT`. Only `Session` mutates rules state.
-- **Hosted play:** client sends 13-byte input frames `[u8 1][u32 seq][f32 x][f32 y]`; the server applies the latest input per seat per tick through `rules.applyCommand`, steps at 60 Hz, and broadcasts 32-byte snapshots `[u8 2][u32 tick][6×f32 puck/mallets][u8 s0][u8 s1][u8 phase]` at 20 Hz; the client interpolates between the last two snapshots using the observed cadence. Rooms: 5-char codes, seat tokens, 30 s reconnect grace (then forfeit), 30 min TTL, 120 frames/s rate limit, 4 KB message cap with fragment reassembly, chat 10/min and 200 chars. Reconnect backoff 0.5 s doubling to 8 s, five attempts, with a "while you were away" summary.
+- **Hosted play:** client sends 13-byte input frames `[u8 1][u32 seq][f32 x][f32 y]`; the authority (dev `server.js`, or the host player's browser on the platform) applies the latest input per seat per tick through `rules.applyCommand`, steps at 60 Hz, and broadcasts 32-byte snapshots `[u8 2][u32 tick][6×f32 puck/mallets][u8 s0][u8 s1][u8 phase]` at 20 Hz; the client interpolates between the last two snapshots using the observed cadence. Rooms (platform mode): REST lobby (create/open/quick-join/leave/mine/result), `/ws/v1/realtime` transport with 16-byte sender prefixes stripped (8 KB frame cap, guests ≤30 msg/s and ready/chat-only text), host-side sim with AI fill-in, guest liveness grace of 30 s (then forfeit), host-relayed chat, reconnect via `GET /rooms/mine` with a "while you were away" summary. Dev mode keeps: 5-char codes, seat tokens, 30 min TTL, 120 frames/s rate limit, 4 KB message cap with fragment reassembly, chat 10/min and 200 chars. Reconnect backoff 0.5 s doubling to 8 s, five attempts.
 - **Persistence:** `localStorage['glow-strikers.save.v1']` = `{checksum, payload}` (FNV-1a over the payload); a checksum mismatch or parse failure starts fresh; `migrate` merges unknown versions onto defaults. Contents: settings, progression (completed stages, stars, totals, streaks, lessons, daily days, challenges, cosmetics), achievements, local boards.
 - **Content validation** (`validateContent`) runs at boot and in tests: obstacle radii and placement, goal approaches and centre spawn clear, unique ids, ≥ 5 lessons and themes.
 - **Performance budgets:** particle pool fixed at 2000 with zero per-frame allocation; shadow map 1024²; dpr capped per tier; bloom only on high; `Renderer.stats()` exposes draw calls and triangles; arena rebuilds dispose geometries and materials.
@@ -219,7 +223,7 @@ Not used: platform identity/profile, platform leaderboards and achievements (bot
 
 ## 14. Testing and acceptance criteria
 
-`npm test` (`node --test tests/rules.test.mjs`, 27 tests): local board limits and hosted 32-byte snapshot scores > 15; initial legality; phase/budget legality; move clamping; rejection reasons and counting; malformed fuzz (no throws/NaN/hangs); centre-line confinement; friction never reverses and speed is capped; goal mouth vs rail; conceder serves; target-score winner/reason; time limit and golden goal; forfeit; monotonic ticks; serialize round-trip; foreign version rejection; property: identical seeds and commands hash identically; replay envelope verification; undo; golden AI matches terminate sanely at three skills; interrupted session resumes; content validation; 40 stages with mastery cadence and ramp; daily stability per UTC day; obstacles clear of goals/spawn; launch scope.
+`npm test` (`node --test tests/rules.test.mjs tests/platform.test.mjs`, 43 tests: rules/session/content plus the hosted adapter + rooms client): local board limits and hosted 32-byte snapshot scores > 15; initial legality; phase/budget legality; move clamping; rejection reasons and counting; malformed fuzz (no throws/NaN/hangs); centre-line confinement; friction never reverses and speed is capped; goal mouth vs rail; conceder serves; target-score winner/reason; time limit and golden goal; forfeit; monotonic ticks; serialize round-trip; foreign version rejection; property: identical seeds and commands hash identically; replay envelope verification; undo; golden AI matches terminate sanely at three skills; interrupted session resumes; content validation; 40 stages with mastery cadence and ramp; daily stability per UTC day; obstacles clear of goals/spawn; launch scope.
 
 `npm run test:e2e` (`tests/e2e.mjs`, playwright-core + system Chrome, embedded static server on an ephemeral port): desktop 1280×800 and mobile 390×844 (touch). Steps: title → Journey list (40 rows, 1 unlocked) → stage 1 setup → Start → countdown → active; HUD objective/clock; an affine calibration of screen→table space via real mouse moves; a full match played by real pointer moves to the results screen (seven-row table, headline); save persistence (win records `j01`, loss increments losses); Practice undo via `Z` and the HUD button plus `H` hint; board-state panel text; pause via `Esc` and HUD button; settings changes applied from pause; Leave Match → lobby offline fallback → title; mobile HUD fit, Retry, pause/resume, leave. Any non-benign console error fails the run.
 
@@ -243,12 +247,12 @@ QA bar as checkable statements: every title button reaches its screen and back; 
 ## 16. Known limitations
 
 - English-only UI; no locale switch (section 10).
-- Leaderboards and achievements are local to the browser; hosted results are authoritative but not posted to any board.
+- Leaderboards: platform boards are read-only for clients (shown when hosted with a `leaderboardId`); personal bests are local and cloud-mirrored, not globally submitted. Achievements are local, also part of the cloud-saved doc.
 - The **Left-handed layout** toggle is stored but changes nothing on screen; the **Voice** slider controls an empty bus.
 - Theme is chosen by content only (Journey band, challenge, daily); the `cosmetics.theme` save field is fixed at Neon Dusk with no picker.
 - Only budget rejections count as invalid actions; malformed or out-of-phase commands are rejected silently.
 - `checkTerminal` has an unreachable overtime branch (goals end overtime inside `goal`); harmless.
-- The e2e covers Hosted Play only up to the offline lobby; a two-human match and the reconnect path are exercised manually. Audio and the gamepad path are not covered by automation.
+- The e2e covers Hosted Play only up to the offline lobby (dev mode); platform rooms (quick-join/hosted tables) and the reconnect path have no live platform to run against — the room flow follows the wiki contract and the host sim reuses the proven rules engine. Audio and the gamepad path are not covered by automation.
 - Hosted-play input frames carry a client sequence number that the server ignores for ordering; the latest frame per tick wins.
 - The e2e binds its own ephemeral port and ignores `BASE_URL`.
 
@@ -256,5 +260,5 @@ QA bar as checkable statements: every title button reaches its screen and back; 
 
 - Localization into the nine target locales with a string table and a language setting.
 - A theme picker for `cosmetics.theme` and a working left-handed HUD mirror.
-- Posting daily/mastery scores and achievements to platform boards once the game uses platform identity.
+- Platform score submission and server-side achievements (client submission is not offered by the platform; script-owned scoring would require a Jint game script, which this repo does not declare).
 - A visible 10-second clock treatment (pulsing clock pill) to pair with the `clock-warning` cue.

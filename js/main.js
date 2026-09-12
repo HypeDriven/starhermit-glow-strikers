@@ -9,7 +9,7 @@ import { Renderer, toWorld } from './render.js';
 import { UI } from './ui.js';
 import { AudioEngine } from './audio.js';
 import { Platform } from './platform.js?v=production-qa-1';
-import { HostedClient } from './net.js?v=production-qa-1';
+import { HostedClient, RoomsClient } from './net.js?v=production-qa-1';
 import {
   JOURNEY, LESSONS, dailyConfig, dailyKey, validateContent,
   CONTENT_VERSION, RULESET_ID,
@@ -24,9 +24,23 @@ const DT = rules.DT;
 const platform = new Platform();
 platform.load();
 
-// Launch token: read from the URL, held in memory only, never persisted.
-const launchToken = new URLSearchParams(location.search).get('token') ?? null;
-if (launchToken) history.replaceState(null, '', location.pathname);
+// Hosted handshake (async): profile nickname first, then the remote save doc
+// (remote wins on conflict). The launch token itself was read + stripped in
+// the Platform constructor; it is never persisted.
+platform.onSync = () => ui?.setAccountLine(platform.accountLine());
+platform.initHosted().then((remote) => {
+  if (!remote) {
+    ui?.setAccountLine(platform.accountLine());
+    return;
+  }
+  // Re-point engines that captured the old settings object, then apply.
+  audio.settings = platform.settings;
+  renderer.settings = platform.settings;
+  applySettings();
+  renderer.buildArena(platform.save.progression.cosmetics.theme);
+  if (app.screen === 'title') goTitle(); // re-render with the remote progression
+  ui?.setAccountLine(platform.accountLine());
+});
 
 let renderer = null;
 try {
@@ -41,7 +55,9 @@ try {
 
 const audio = new AudioEngine(platform.settings, (text) => ui.caption(text));
 const ui = new UI(platform, audio);
-const net = new HostedClient();
+// Platform rooms (host-routed) when a launch token is present; the repo's own
+// dev-server protocol otherwise.
+const net = platform.hosted ? new RoomsClient(platform) : new HostedClient();
 
 applySettings();
 platform.syncTime();
@@ -168,7 +184,7 @@ function endMatch() {
     headline: headlineFor(won, draw),
     sub: app.matchCfg.name ?? '',
     breakdown,
-    names: ['You', app.matchCfg.ai ? 'AI' : 'Opponent'],
+    names: [platform.displayName ?? 'You', app.matchCfg.ai ? 'AI' : 'Opponent'],
     achievements,
     stars,
     next: hasNext ? `Next: ${JOURNEY[nextIdx].name}` : null,
@@ -207,7 +223,7 @@ function resolveProgression(won, draw, breakdown) {
   const base = {
     ruleset: RULESET_ID, contentVersion: CONTENT_VERSION, seed: s.seed,
     assists: platform.settings.timingAssist ? ['timing'] : [],
-    durationTicks: s.activeTicks, name: 'You',
+    durationTicks: s.activeTicks, name: platform.displayName ?? 'You',
   };
 
   if (app.mode === 'journey' && won) {
@@ -567,25 +583,31 @@ function frame(now) {
       if (app.lesson && !app.lessonState.done) updateLesson(events);
     }
     updateHud();
-  } else if (app.mode === 'hosted' && net.snap) {
-    // Hosted: inputs stream to the authoritative server; we interpolate
-    // between the last two snapshots it broadcasts.
+  } else if (app.mode === 'hosted' && (net.snap || net.isHost)) {
+    // Hosted: inputs stream to the authority (dev server, or the host player's
+    // browser on the platform) and we interpolate between the last two
+    // snapshots it broadcasts. The host also drives the simulation here.
+    net.stepHost?.(dt * 1000);
     if (app.screen === 'hosted') {
       keyboardStep();
       gamepadStep();
     }
-    app.prevPos = net.prevSnap ? posFromSnap(net.prevSnap) : posFromSnap(net.snap);
-    app.curPos = posFromSnap(net.snap);
-    const interval = net.snapshotInterval();
-    app.acc = Math.min(interval, performance.now() - net.snapAt) / interval;
+    if (!net.snap) { app.prevPos = app.curPos = null; }
+    else {
+      app.prevPos = net.prevSnap ? posFromSnap(net.prevSnap) : posFromSnap(net.snap);
+      app.curPos = posFromSnap(net.snap);
+      const interval = net.snapshotInterval();
+      app.acc = Math.min(interval, performance.now() - net.snapAt) / interval;
+    }
   }
 
   const alpha = app.session ? app.acc / DT : app.acc;
   if (app.curPos) {
-    renderer.render(dt, app.prevPos, app.curPos, Math.min(1, Math.max(0, alpha)), app.session?.state ?? null);
-    if (app.session?.state) {
-      const p = app.session.state.puck;
-      audio.setMusicIntensity(Math.min(1, Math.hypot(p.vx, p.vy) / 220));
+    const renderState = app.session?.state ?? (net.isHost ? net.hostSim?.state : null) ?? null;
+    renderer.render(dt, app.prevPos, app.curPos, Math.min(1, Math.max(0, alpha)), renderState);
+    const puckState = app.session?.state ?? (net.isHost ? net.hostSim?.state : null);
+    if (puckState) {
+      audio.setMusicIntensity(Math.min(1, Math.hypot(puckState.puck.vx, puckState.puck.vy) / 220));
     }
   }
   updateBoardState(now);
@@ -844,11 +866,13 @@ ui.on('help-back', (opts) => {
   else goTitle();
 });
 ui.on('show-achievements', () => ui.showAchievements());
-ui.on('show-leaderboard', () => {
-  ui.showLeaderboard(
-    platform.getBoard('daily', dailyKey(platform.now())),
-    platform.getBoard('journey'),
-  );
+ui.on('show-leaderboard', async () => {
+  const daily = platform.getBoard('daily', dailyKey(platform.now()));
+  const journey = platform.getBoard('journey');
+  // Platform boards are read-only for clients; personal bests stay local
+  // (and cloud-mirrored). Fetch first so the screen renders once.
+  const board = platform.hosted ? await platform.fetchPlatformLeaderboard() : null;
+  ui.showLeaderboard(daily, journey, board);
 });
 ui.on('replay-tutorial', () => ui.showLearn());
 ui.on('settings-changed', () => applySettings());
@@ -868,12 +892,20 @@ function applySettings() {
 // Hosted play
 // ---------------------------------------------------------------------------
 
-const lobby = { chat: [], status: 'Connect to create or join a room.', roomCode: null, players: [], canStartAI: false };
+const HOSTED_ROOMS = platform.hosted;   // platform rooms vs own dev server
+const lobby = {
+  chat: [], status: '', roomCode: null, joined: false,
+  players: [], canStartAI: false,
+};
+
+function yourName() { return platform.displayName ?? 'You'; }
 
 function refreshLobby() {
   ui.showLobby({
     status: lobby.status,
     roomCode: lobby.roomCode,
+    joined: lobby.joined,
+    rooms: HOSTED_ROOMS,
     players: lobby.players,
     chat: lobby.chat.slice(-30),
     canStartAI: lobby.canStartAI,
@@ -882,6 +914,17 @@ function refreshLobby() {
 
 ui.on('show-lobby', async () => {
   app.screen = 'lobby';
+  lobby.chat = [];
+  lobby.roomCode = null;
+  lobby.joined = false;
+  lobby.players = [];
+  lobby.canStartAI = false;
+  net.name = yourName();
+  if (HOSTED_ROOMS) {
+    lobby.status = 'Create a room and an opponent can quick-join it, or quick-join an open table yourself.';
+    refreshLobby();
+    return;
+  }
   lobby.status = 'Connecting…';
   refreshLobby();
   try {
@@ -892,36 +935,94 @@ ui.on('show-lobby', async () => {
   }
   refreshLobby();
 });
-ui.on('lobby-create', () => { net.name = 'You'; net.createRoom(); });
+ui.on('lobby-create', async () => {
+  net.name = yourName();
+  if (HOSTED_ROOMS) {
+    lobby.status = 'Creating room…';
+    refreshLobby();
+    try {
+      await net.createRoom();
+    } catch {
+      lobby.status = 'Online play is unavailable right now. Solo modes remain available.';
+      refreshLobby();
+    }
+    return;
+  }
+  net.createRoom();
+});
 ui.on('lobby-join', (code) => { if (code) net.joinRoom(code); });
+ui.on('lobby-quick-join', async () => {
+  lobby.status = 'Looking for an open table…';
+  refreshLobby();
+  try {
+    await net.quickJoin();
+  } catch {
+    lobby.status = 'Online play is unavailable right now. Solo modes remain available.';
+    refreshLobby();
+  }
+});
 ui.on('lobby-start-ai', () => net.startVsAI());
-ui.on('lobby-leave', () => { net.leave(); lobby.roomCode = null; lobby.players = []; goTitle(); });
+ui.on('lobby-leave', () => { net.leave(); lobby.roomCode = null; lobby.joined = false; lobby.players = []; goTitle(); });
 ui.on('lobby-chat', (text) => net.sendChat(text));
 
 net.on('created', (m) => {
+  lobby.joined = true;
   lobby.roomCode = m.room;
-  lobby.players = ['You (seat 1)', '— waiting —'];
+  lobby.players = HOSTED_ROOMS
+    ? [`${yourName()} (host)`, '— waiting for an opponent —']
+    : [`${yourName()} (seat 1)`, '— waiting —'];
   lobby.canStartAI = true;
-  lobby.status = 'Room created. Share the code, or start against the AI.';
+  lobby.status = HOSTED_ROOMS
+    ? 'Room open. Waiting for an opponent to quick-join, or start against the AI.'
+    : 'Room created. Share the code, or start against the AI.';
   refreshLobby();
 });
 net.on('joined', (m) => {
+  lobby.joined = true;
   lobby.roomCode = m.room;
-  lobby.players = ['Host (seat 1)', 'You (seat 2)'];
+  lobby.players = HOSTED_ROOMS
+    ? ['Host', `${yourName()} (you)`]
+    : ['Host (seat 1)', `${yourName()} (seat 2)`];
   lobby.status = 'Joined. Waiting for the match to start…';
   refreshLobby();
 });
 net.on('peer-joined', (m) => {
-  lobby.players = ['You (seat 1)', `${m.name} (seat 2)`];
+  lobby.players = [`${yourName()} (host)`, `${m.name} (seat 2)`];
   lobby.canStartAI = false;
   lobby.status = `${m.name} joined. Match starting…`;
   if (app.screen === 'lobby') refreshLobby();
 });
-net.on('peer-left', () => {
-  if (app.screen === 'hosted') ui.toast('Opponent disconnected — they have 30s to return.');
+net.on('peer-left', (m) => {
+  if (HOSTED_ROOMS && !net.isHost) {
+    // The host is gone: the room (and any match in it) is over.
+    if (app.mode === 'hosted') {
+      ui.toast('The host left — the match is over.');
+      net.leave();
+      goTitle();
+    } else {
+      lobby.status = 'The host left the room.';
+      lobby.joined = false;
+      lobby.players = [];
+      if (app.screen === 'lobby') refreshLobby();
+    }
+    return;
+  }
+  if (app.mode === 'hosted' || app.screen === 'hosted') ui.toast('Opponent disconnected — they have 30s to return.');
+  else if (app.screen === 'lobby') { lobby.status = 'Your opponent left the room.'; refreshLobby(); }
 });
 net.on('peer-abandoned', () => ui.toast('Opponent left the match.'));
-net.on('error', (m) => { lobby.status = `Error: ${m.error}`; if (app.screen === 'lobby') refreshLobby(); });
+net.on('error', (m) => {
+  lobby.status = m.error === 'no-open-tables'
+    ? 'No open tables right now. Create a room instead and an opponent can join you.'
+    : m.error === 'match-in-progress'
+      ? 'That table is mid-match and cannot take new players right now.'
+      : `Error: ${m.error}`;
+  if (app.screen === 'lobby') refreshLobby();
+});
+net.on('disconnected', () => {
+  ui.toast('Connection to the room was lost.');
+  if (app.mode === 'hosted' || app.screen === 'lobby') { net.leave(); goTitle(); }
+});
 net.on('reconnecting', (m) => ui.toast(`Reconnecting (attempt ${m.attempt})…`));
 net.on('resumed', () => {
   const away = net.takeAwaySummary();
@@ -936,15 +1037,17 @@ net.on('chat', (m) => {
 net.on('start', (m) => {
   app.mode = 'hosted';
   app.session = null;
+  app.prevPos = app.curPos = null;
   app.matchCfg = { id: `hosted-${net.room}`, name: `Hosted · Room ${net.room}`, seed: m.seed, targetScore: 5 };
   app.screen = 'hosted';
   app.acc = 0;
+  lobby.canStartAI = false;
   renderer.buildArena(platform.save.progression.cosmetics.theme, []);
   renderer.transitionToPlay();
   ui.hideScreens();
   ui.showHud(true);
   ui.setScores(0, 0);
-  ui.setObjective('First to 5 · hosted · server-authoritative');
+  ui.setObjective(`First to 5 · hosted · ${net.isHost ? 'you host' : 'host-routed'} · server-authoritative`);
   audio.ensure();
   audio.startMusic();
 });
@@ -965,7 +1068,7 @@ net.on('result', (m) => {
     headline: won ? 'Victory' : b.winner === -1 ? 'Draw' : 'Defeat',
     sub: `Hosted room ${net.room} · authoritative hash ${m.result.finalHash}`,
     breakdown: { ...b, players: [b.players[me], b.players[opp]] },
-    names: ['You', 'Opponent'],
+    names: [yourName(), 'Opponent'],
     canRetry: false,
   });
 });
