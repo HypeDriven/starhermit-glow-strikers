@@ -4,6 +4,8 @@
 
 import { ACHIEVEMENTS, THEMES, JOURNEY, CHALLENGES, LESSONS, dailyConfig } from './content.js';
 import { TERMINAL } from './rules.js';
+import { PRESETS, CATEGORIES, presetTier, withPreset } from './gfx.js';
+import { gfxStrings } from './gfx-strings.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -460,9 +462,9 @@ export class UI {
           toggle('Mute all', 'muted'),
           toggle('Captions for audio cues', 'captions'),
         ),
+        this._graphicsSection(),
         el('div', { class: 'settings-group' },
-          el('h3', { text: 'Graphics' }),
-          select('Quality tier', 'quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']]),
+          el('h3', { text: 'Display' }),
           toggle('Reduced motion', 'reducedMotion'),
           toggle('High contrast', 'highContrast'),
           select('Colour palette', 'palette', [['default', 'Default'], ['deuteranopia', 'Deuteranopia-safe'], ['protanopia', 'Protanopia-safe'], ['tritanopia', 'Tritanopia-safe']]),
@@ -488,6 +490,86 @@ export class UI {
         el('div', { class: 'btn-row' },
           el('button', { class: 'btn', onclick: () => this.emit('settings-back', opts) }, 'Back')),
       )));
+  }
+
+  /**
+   * Graphics section: quality preset, render scale, per-category overrides,
+   * adaptive resolution, fps readout and a live cost summary. Every change is
+   * saved with the other settings and applied immediately (settings-changed).
+   */
+  _graphicsSection() {
+    const P = this.platform;
+    const L = gfxStrings();
+    const section = el('div', { class: 'settings-group', id: 'gfx-section' });
+    const info = () => this.gfxInfo?.() ?? { detected: 'balanced', resolved: { preset: 'balanced' }, summary: '', gpu: '' };
+    const save = (graphics, quiet = false) => {
+      P.updateSettings({ graphics });
+      // Slider drags apply without the UI tap on every step.
+      if (quiet) for (const fn of this.handlers['settings-changed'] ?? []) fn({ graphics });
+      else this.emit('settings-changed', { graphics });
+    };
+    const refreshSummary = () => {
+      const i = info();
+      const sum = section.querySelector('#gfx-summary');
+      if (sum) sum.textContent = `${i.gpu || L.gpuUnknown} · ${i.summary}`;
+      const note = section.querySelector('#gfx-note');
+      if (note) note.hidden = !i.postFailed;
+    };
+    // Summary reflects the new pixel size one frame later.
+    const refreshSoon = () => requestAnimationFrame(() => requestAnimationFrame(refreshSummary));
+    const rowSelect = (id, label, options, value, onchange) => el('div', { class: 'setting-row' },
+      el('label', { for: id, text: label }),
+      el('select', { id, onchange }, options.map(([v, t]) => el('option', { value: v, text: t, selected: value === v }))));
+    const rowToggle = (id, label, checked, onchange) => el('div', { class: 'setting-row' },
+      el('label', { for: id, text: label }),
+      el('input', { type: 'checkbox', id, checked, onchange }));
+
+    const build = (focusId) => {
+      const g = P.settings.graphics ?? {};
+      const i = info();
+      const preset = i.resolved.preset;
+      const scalePct = Math.round((Number(g.render_scale) || 1) * 100);
+      const scaleOut = el('output', { id: 'gfx-scale-value', for: 'gfx-scale', text: `${scalePct}%` });
+      section.replaceChildren(
+        el('h3', { text: L.graphics }),
+        rowSelect('gfx-preset', L.quality,
+          [['auto', L.auto.replace('{tier}', L.presets[i.detected])], ...PRESETS.map(p => [p, L.presets[p]])],
+          PRESETS.includes(g.preset) ? g.preset : 'auto',
+          (e) => { save(withPreset(P.settings.graphics, e.target.value)); build('gfx-preset'); refreshSoon(); }),
+        el('div', { class: 'setting-row' },
+          el('label', { for: 'gfx-scale', text: L.renderScale }),
+          el('span', { class: 'range-with-value' },
+            el('input', {
+              type: 'range', id: 'gfx-scale', min: 50, max: 200, step: 10, value: scalePct,
+              oninput: (e) => {
+                scaleOut.textContent = `${e.target.value}%`;
+                save({ ...P.settings.graphics, render_scale: Number(e.target.value) / 100 }, true);
+                refreshSoon();
+              },
+            }),
+            scaleOut)),
+        ...Object.entries(CATEGORIES).map(([cat, tiers]) => rowSelect(`gfx-cat-${cat}`, L.cats[cat],
+          [['preset', L.fromPreset.replace('{tier}', L.tiers[presetTier(preset, cat)])], ...tiers.map(t => [t, L.tiers[t]])],
+          tiers.includes(g[cat]) ? g[cat] : 'preset',
+          (e) => {
+            const next = { ...P.settings.graphics };
+            if (e.target.value === 'preset') delete next[cat];
+            else next[cat] = e.target.value;
+            save(next);
+            refreshSoon();
+          })),
+        rowToggle('gfx-adaptive', L.adaptive, g.adaptive !== false,
+          (e) => save({ ...P.settings.graphics, adaptive: e.target.checked })),
+        rowToggle('gfx-fps', L.showFps, !!g.show_fps,
+          (e) => save({ ...P.settings.graphics, show_fps: e.target.checked })),
+        el('p', { class: 'gfx-summary', id: 'gfx-summary', role: 'status' }),
+        el('p', { class: 'gfx-note', id: 'gfx-note', hidden: true, text: L.postFailed }),
+      );
+      refreshSummary();
+      if (focusId) section.querySelector(`#${focusId}`)?.focus();
+    };
+    build();
+    return section;
   }
 
   // ---------------------------------------------------------------- achievements & boards

@@ -55,6 +55,7 @@ try {
 
 const audio = new AudioEngine(platform.settings, (text) => ui.caption(text));
 const ui = new UI(platform, audio);
+ui.gfxInfo = () => renderer.graphicsInfo();
 // Platform rooms (host-routed) when a launch token is present; the repo's own
 // dev-server protocol otherwise.
 const net = platform.hosted ? new RoomsClient(platform) : new HostedClient();
@@ -602,9 +603,10 @@ function frame(now) {
   }
 
   const alpha = app.session ? app.acc / DT : app.acc;
+  // No positions yet (menus, lobby): the renderer draws its attract view.
+  const renderState = app.session?.state ?? (net.isHost ? net.hostSim?.state : null) ?? null;
+  renderer.render(dt, app.prevPos, app.curPos, Math.min(1, Math.max(0, alpha)), renderState);
   if (app.curPos) {
-    const renderState = app.session?.state ?? (net.isHost ? net.hostSim?.state : null) ?? null;
-    renderer.render(dt, app.prevPos, app.curPos, Math.min(1, Math.max(0, alpha)), renderState);
     const puckState = app.session?.state ?? (net.isHost ? net.hostSim?.state : null);
     if (puckState) {
       audio.setMusicIntensity(Math.min(1, Math.hypot(puckState.puck.vx, puckState.puck.vy) / 220));
@@ -728,6 +730,7 @@ function goTitle() {
   audio.stopMusic();
   ui.showHud(false);
   ui.showTitle();
+  app.prevPos = app.curPos = null;
   renderer.buildArena(platform.save.progression.cosmetics.theme);
 }
 
@@ -885,7 +888,7 @@ function applySettings() {
   if (s.palette !== 'default') document.body.classList.add(`palette-${s.palette}`);
   document.documentElement.style.setProperty('--text-scale', s.textScale);
   audio.applyVolumes();
-  if (s.quality !== 'auto') renderer.setQuality(s.quality);
+  renderer.setGraphics(s.graphics);
 }
 
 // ---------------------------------------------------------------------------

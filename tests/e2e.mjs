@@ -270,7 +270,7 @@ async function newPassPage(browser, label, viewport, hasTouch) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() !== 'error') return;
+    if (m.type() !== 'error' && m.type() !== 'warning') return;
     const text = m.text();
     if (browserNoise.test(text) || wsOfflineNoise.test(text)) return;
     errors.push(`console: ${text}`);
@@ -314,12 +314,85 @@ async function assertResults(page, label) {
   return h2;
 }
 
+// Graphics settings through the visible UI: presets, one override, live
+// application (canvas data-gfx-* attributes + summary), panel fit, reload
+// persistence. Ends back on Auto so the rest of the run stays on Low.
+async function graphicsSteps(page, step, base, label, VW) {
+  const canvasPreset = () => page.evaluate(() => document.getElementById('game-canvas').dataset.gfxPreset);
+  const waitPreset = (p, post) => page.waitForFunction(([p, post]) => {
+    const d = document.getElementById('game-canvas').dataset;
+    return d.gfxPreset === p && (post == null || d.gfxPost === post);
+  }, [p, post], { timeout: 60000 });
+  const openSettings = async () => {
+    await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+    await page.locator('#gfx-section').scrollIntoViewIfNeeded();
+  };
+  const summary = () => page.textContent('#gfx-summary');
+  const backToTitle = async () => {
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.waitForSelector('#screen-title');
+  };
+
+  await step('graphics: Auto detects Low on the software GPU', async () => {
+    await openSettings();
+    const autoLabel = await page.locator('#gfx-preset option[value="auto"]').textContent();
+    if (!/Auto \(detected: Low\)/.test(autoLabel)) throw new Error(`auto label: ${autoLabel}`);
+    if (await canvasPreset() !== 'low') throw new Error(`canvas preset ${await canvasPreset()}`);
+    const box = await page.locator('#gfx-section').boundingBox();
+    if (!box || box.x < 0 || box.x + box.width > VW + 1) throw new Error('graphics section cut off: ' + JSON.stringify(box));
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    if (overflow) throw new Error('horizontal page scroll with settings open');
+    for (const id of ['#gfx-preset', '#gfx-scale', '#gfx-cat-shadows', '#gfx-cat-bloom', '#gfx-adaptive', '#gfx-fps']) {
+      if (!await page.locator(id).isVisible()) throw new Error(`${id} not visible`);
+    }
+  });
+
+  await step('graphics: Low then High apply live', async () => {
+    await page.selectOption('#gfx-preset', 'low');
+    await waitPreset('low', 'off');
+    await page.selectOption('#gfx-preset', 'high');
+    await waitPreset('high', 'on');
+    await page.waitForFunction(() => /2048² shadows/.test(document.getElementById('gfx-summary').textContent), null, { timeout: 30000 });
+    await page.screenshot({ path: shot('graphics-high', label) });
+  });
+
+  await step('graphics: bloom override applies; Ultra clears overrides', async () => {
+    await page.selectOption('#gfx-cat-bloom', 'off');
+    await page.waitForFunction(() => !/bloom/.test(document.getElementById('gfx-summary').textContent), null, { timeout: 30000 });
+    await page.selectOption('#gfx-preset', 'ultra');
+    await waitPreset('ultra', 'on');
+    if (await page.inputValue('#gfx-cat-bloom') !== 'preset') throw new Error('preset did not clear the bloom override');
+    await page.waitForTimeout(500);
+    await page.selectOption('#gfx-preset', 'high');
+    await page.selectOption('#gfx-cat-bloom', 'off');
+    await page.check('#gfx-fps');
+    if (!await page.locator('#fps-meter').isVisible()) throw new Error('fps readout not shown');
+    await page.uncheck('#gfx-fps');
+    if (/bloom/.test(await summary())) throw new Error('bloom still in summary');
+  });
+
+  await step('graphics: settings survive reload', async () => {
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.__gs?.app?.screen === 'title', null, { timeout: 30000 });
+    await waitPreset('high');
+    await openSettings();
+    if (await page.inputValue('#gfx-preset') !== 'high') throw new Error('preset not persisted');
+    if (await page.inputValue('#gfx-cat-bloom') !== 'off') throw new Error('bloom override not persisted');
+    // Back to Auto (Low here) for the rest of the run.
+    await page.selectOption('#gfx-preset', 'auto');
+    await waitPreset('low', 'off');
+    await backToTitle();
+  });
+}
+
 async function desktopPass(browser, base) {
   const VW = 1280, VH = 800;
   const { context, page, errors, step } = await newPassPage(
     browser, 'desktop', { width: VW, height: VH }, false);
 
   await step('load → title screen', () => gotoTitle(page, base, 'desktop'));
+  await graphicsSteps(page, step, base, 'desktop', VW);
 
   await step('journey list: 40 stages, only stage 1 unlocked', async () => {
     await page.getByRole('button', { name: /^Journey/ }).click();
@@ -488,6 +561,7 @@ async function mobilePass(browser, base) {
     browser, 'mobile', { width: VW, height: VH }, true);
 
   await step('load → title screen', () => gotoTitle(page, base, 'mobile'));
+  await graphicsSteps(page, step, base, 'mobile', VW);
 
   await step('journey stage 1 → active, HUD fits small viewport', async () => {
     await startJourneyStage1(page);

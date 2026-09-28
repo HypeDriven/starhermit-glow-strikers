@@ -419,3 +419,33 @@ test('host sim broadcasts start, steps, and reports result via REST + frame', ()
     assert.ok(c.snap && c.snap.tick > 0, 'host renders through its own snapshot path');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Graphics settings migration
+// ---------------------------------------------------------------------------
+
+test('legacy quality tier migrates to a graphics preset; graphics round-trips', async () => {
+  const { hashValue } = await import('../js/rng.js');
+  mockLocation({ hash: '', search: '' });
+  mockFetch([]);
+  const ls = mockLocalStorage();
+  const write = (save) => {
+    const payload = JSON.stringify(save);
+    ls.setItem('glow-strikers.save.v1', JSON.stringify({ checksum: hashValue(payload), payload }));
+  };
+  write({ version: 1, settings: { quality: 'medium' } });
+  let p = new Platform();
+  assert.equal(p.load(), true);
+  assert.equal(p.settings.graphics.preset, 'balanced');
+  assert.equal('quality' in p.settings, false);
+
+  p.updateSettings({ graphics: { preset: 'ultra', bloom: 'off', render_scale: 1.5 } });
+  p = new Platform();
+  p.load();
+  assert.deepEqual(p.settings.graphics, { preset: 'ultra', bloom: 'off', render_scale: 1.5 });
+
+  write({ version: 1, settings: {} });
+  p = new Platform();
+  p.load();
+  assert.equal(p.settings.graphics.preset, 'auto');
+});

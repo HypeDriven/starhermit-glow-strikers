@@ -473,3 +473,25 @@ body.reduced-motion .toast { animation: none; }
   .title-art { max-height: 70px; }
   .result-art { max-height: 60px; }
 }
+
+/* Graphics settings */
+.range-with-value { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.range-with-value output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+#gfx-section .setting-row select { max-width: 58%; }
+.gfx-summary { margin: 10px 0 0; font-size: 0.82rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.gfx-note { margin: 6px 0 0; font-size: 0.82rem; color: var(--accent-gold); }
+#fps-meter {
+  position: fixed;
+  left: calc(env(safe-area-inset-left, 0px) + 6px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 2px);
+  z-index: 50;
+  pointer-events: none;
+  font: 11px/1.2 ui-monospace, monospace;
+  color: var(--text-dim);
+  background: rgba(7, 10, 24, 0.6);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+@media (max-width: 480px) {
+  #gfx-section .setting-row select { max-width: 60%; font-size: 0.82rem; padding: 6px; }
+}

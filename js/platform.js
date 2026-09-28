@@ -146,7 +146,9 @@ export const DEFAULT_SETTINGS = {
   volumeAmbience: 0.5,
   volumeVoice: 0.8,
   muted: false,
-  quality: 'auto',            // auto | low | medium | high
+  // Graphics quality (js/gfx.js): preset auto|low|balanced|high|ultra, render
+  // scale, adaptive resolution, fps readout, plus optional per-category overrides.
+  graphics: { preset: 'auto', render_scale: 1, adaptive: true, show_fps: false },
   reducedMotion: false,
   highContrast: false,
   palette: 'default',         // default | deuteranopia | protanopia | tritanopia
@@ -544,12 +546,22 @@ export class Platform {
   stopPresence() { clearInterval(this._presence); this._presence = null; }
 }
 
+// Pre-graphics-panel saves stored a single quality tier.
+const LEGACY_QUALITY = { low: 'low', medium: 'balanced', high: 'high' };
+function migrateGraphics(settings) {
+  if (!settings.graphics || typeof settings.graphics !== 'object') {
+    settings.graphics = { ...DEFAULT_SETTINGS.graphics, preset: LEGACY_QUALITY[settings.quality] ?? 'auto' };
+  }
+  delete settings.quality;
+  return settings;
+}
+
 function migrate(save) {
   // Versioned migration path; unknown versions fall back to defaults + salvage.
   if (!save || typeof save !== 'object') return defaultSave();
-  if (save.version === SAVE_VERSION) return { ...defaultSave(), ...save, settings: { ...DEFAULT_SETTINGS, ...save.settings } };
+  if (save.version === SAVE_VERSION) return { ...defaultSave(), ...save, settings: migrateGraphics({ ...DEFAULT_SETTINGS, graphics: undefined, ...save.settings }) };
   const fresh = defaultSave();
-  fresh.settings = { ...fresh.settings, ...(save.settings ?? {}) };
+  fresh.settings = migrateGraphics({ ...fresh.settings, graphics: undefined, ...(save.settings ?? {}) });
   fresh.progression = { ...fresh.progression, ...(save.progression ?? {}) };
   fresh.version = SAVE_VERSION;
   return fresh;
