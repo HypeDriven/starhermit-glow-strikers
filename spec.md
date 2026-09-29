@@ -275,3 +275,7 @@ QA bar as checkable statements: every title button reaches its screen and back; 
 - A theme picker for `cosmetics.theme` and a working left-handed HUD mirror.
 - Platform score submission and server-side achievements (client submission is not offered by the platform; script-owned scoring would require a Jint game script, which this repo does not declare).
 - A visible 10-second clock treatment (pulsing clock pill) to pair with the `clock-warning` cue.
+
+## Browser interference
+
+`browser-guard.js` (loaded from `index.html`) suppresses browser UI that gets in the way of play: the right-click context menu, the iOS long-press callout, copy / cut / paste, and page text selection. Text fields (inputs, textareas, selects, contenteditable) keep normal selection, context menu and clipboard behaviour.
