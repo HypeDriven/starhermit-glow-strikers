@@ -10,6 +10,7 @@ import { UI } from './ui.js';
 import { AudioEngine } from './audio.js';
 import { Platform } from './platform.js?v=production-qa-1';
 import { HostedClient, RoomsClient } from './net.js?v=production-qa-1';
+import { platformStrings } from './platform-strings.js';
 import {
   JOURNEY, LESSONS, dailyConfig, dailyKey, validateContent,
   CONTENT_VERSION, RULESET_ID,
@@ -28,6 +29,11 @@ platform.load();
 // (remote wins on conflict). The launch token itself was read + stripped in
 // the Platform constructor; it is never persisted.
 platform.onSync = () => ui?.setAccountLine(platform.accountLine());
+// Renewal refused: local play continues; the title re-offers sign-in.
+platform.onSignedOut = () => {
+  ui?.toast(platformStrings().signedOut);
+  if (app.screen === 'title') goTitle();
+};
 platform.initHosted().then((remote) => {
   if (!remote) {
     ui?.setAccountLine(platform.accountLine());
@@ -61,7 +67,6 @@ ui.gfxInfo = () => renderer.graphicsInfo();
 const net = platform.hosted ? new RoomsClient(platform) : new HostedClient();
 
 applySettings();
-platform.syncTime();
 
 ui.showBoot(20, 'Loading rules…');
 const contentProblems = validateContent();
@@ -142,7 +147,6 @@ function startMatch(contentCfg, mode, meta = {}) {
   audio.ensure();
   audio.startMusic();
   platform.track('start', { mode, content: contentCfg.id });
-  platform.startPresence();
   app.screen = 'playing';
 }
 
@@ -394,10 +398,18 @@ canvas.addEventListener('lostpointercapture', () => {
   renderer.showTargetMarker(0, 0, false);
 });
 
-const keysHeld = new Set();
+// Keyboard: KeyboardEvent.code → action through the effective bindings
+// (platform controls when signed in, local remaps otherwise).
+const keysHeld = new Set();   // held movement actions
+function actionOf(code) {
+  const map = platform.keyMap();
+  for (const a of Object.keys(map)) if (map[a].includes(code)) return a;
+  return null;
+}
 window.addEventListener('keydown', (e) => {
-  const k = platform.settings.keys;
-  if (e.code === k.pause) {
+  const act = actionOf(e.code);
+  if (!act) return;
+  if (act === 'pause') {
     e.preventDefault();
     if (app.screen === 'playing' || app.screen === 'hosted') pauseGame();
     else if (app.screen === 'paused' || app.screen === 'hosted-paused') resumeGame();
@@ -406,18 +418,18 @@ window.addEventListener('keydown', (e) => {
   if (app.screen === 'hosted') {
     // hosted: keyboard/gamepad input allowed; undo/camera/hint handled below
   } else if (app.screen !== 'playing' || app.paused) return;
-  if (e.code === k.undo) { doUndo(); return; }
-  if (e.code === k.camera) { renderer.transitionToPlay(); return; }
-  if (e.code === k.hint) { giveHint(); return; }
-  if ([k.up, k.down, k.left, k.right].includes(e.code)) {
+  if (act === 'undo') { doUndo(); return; }
+  if (act === 'camera') { renderer.transitionToPlay(); return; }
+  if (act === 'hint') { giveHint(); return; }
+  if (['up', 'down', 'left', 'right'].includes(act)) {
     e.preventDefault();
-    keysHeld.add(e.code);
+    keysHeld.add(act);
     if (!app.keyTarget && app.session) {
       app.keyTarget = { x: app.session.state.mallets[0].x, y: app.session.state.mallets[0].y };
     }
   }
 });
-window.addEventListener('keyup', (e) => keysHeld.delete(e.code));
+window.addEventListener('keyup', (e) => { const act = actionOf(e.code); if (act) keysHeld.delete(act); });
 window.addEventListener('blur', () => keysHeld.clear());
 
 function currentMalletPos() {
@@ -428,19 +440,17 @@ function currentMalletPos() {
 
 function keyboardStep() {
   if (!keysHeld.size) return;
-  const k = platform.settings.keys;
-  const moves = [k.up, k.down, k.left, k.right];
-  if (!moves.some(c => keysHeld.has(c))) return;
+  if (!['up', 'down', 'left', 'right'].some(a => keysHeld.has(a))) return;
   if (!app.keyTarget) {
     const m = currentMalletPos();
     if (!m) return;
     app.keyTarget = { x: m.x, y: m.y };
   }
   const speed = 140 * DT;
-  if (keysHeld.has(k.up)) app.keyTarget.y += speed;
-  if (keysHeld.has(k.down)) app.keyTarget.y -= speed;
-  if (keysHeld.has(k.left)) app.keyTarget.x -= speed;
-  if (keysHeld.has(k.right)) app.keyTarget.x += speed;
+  if (keysHeld.has('up')) app.keyTarget.y += speed;
+  if (keysHeld.has('down')) app.keyTarget.y -= speed;
+  if (keysHeld.has('left')) app.keyTarget.x -= speed;
+  if (keysHeld.has('right')) app.keyTarget.x += speed;
   issueMove(0, app.keyTarget.x, app.keyTarget.y);
   renderer.showTargetMarker(app.keyTarget.x, app.keyTarget.y, true);
 }
@@ -527,10 +537,12 @@ function resumeGame() {
   ui.showHud(true);
 }
 
+window.addEventListener('pagehide', () => platform.flushCloud());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (app.screen === 'playing' && app.mode !== 'hosted') pauseGame(); // backgrounding pauses solo sim
     audio.suspend();
+    platform.flushCloud();
   } else {
     audio.ensure();
   }
@@ -759,7 +771,7 @@ ui.on('start-daily', () => {
   const secs = platform.secondsUntilNextDaily();
   ui.showSetup({
     title: d.name,
-    description: `One shared seed for everyone today. Ranked. Next daily in ${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m${platform.timeSynced ? '' : ' (clock unsynced)'}.`,
+    description: `One shared seed for everyone today. Ranked. Next daily in ${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m.`,
     targetScore: d.targetScore, timeLimitSeconds: d.timeLimitSeconds, ranked: true, players: '1 vs AI',
     content: d,
   });
@@ -899,6 +911,8 @@ const HOSTED_ROOMS = platform.hosted;   // platform rooms vs own dev server
 const lobby = {
   chat: [], status: '', roomCode: null, joined: false,
   players: [], canStartAI: false,
+  friends: null,      // host in a platform room: [{ userId, name, online, invited }]
+  invites: [],        // platform room invites addressed to me: [{ id, name }]
 };
 
 function yourName() { return platform.displayName ?? 'You'; }
@@ -912,8 +926,58 @@ function refreshLobby() {
     players: lobby.players,
     chat: lobby.chat.slice(-30),
     canStartAI: lobby.canStartAI,
+    friends: lobby.joined && net.isHost ? lobby.friends : null,
+    invites: lobby.joined ? [] : lobby.invites,
   });
 }
+
+// Platform rooms: the host invites friends; others see their pending invites.
+async function loadFriendsForInvite() {
+  const list = await net.friends();
+  lobby.friends = await Promise.all(list.map(async (f) => ({
+    userId: f.userId ?? f.id,
+    name: await platform.profileFor(f.userId ?? f.id),
+    online: !!f.online,
+    invited: false,
+  })));
+  if (app.screen === 'lobby') refreshLobby();
+}
+async function loadIncomingInvites() {
+  const list = await net.incomingInvites().catch(() => []);
+  lobby.invites = await Promise.all(list.map(async (inv) => ({
+    id: inv.id ?? inv.inviteId,
+    name: inv.fromUserId ? await platform.profileFor(inv.fromUserId) : (inv.fromUsername ?? 'A friend'),
+  })));
+  if (app.screen === 'lobby') refreshLobby();
+}
+ui.on('lobby-invite-friend', async (userId) => {
+  try {
+    await net.inviteFriend(userId);
+    const f = lobby.friends?.find(x => x.userId === userId);
+    if (f) f.invited = true;
+  } catch {
+    ui.toast('Invite not sent');
+  }
+  refreshLobby();
+});
+ui.on('lobby-accept-invite', async (id) => {
+  lobby.status = 'Joining…';
+  refreshLobby();
+  try { await net.acceptInvite(id); }
+  catch { lobby.status = 'That invite is no longer valid.'; lobby.invites = lobby.invites.filter(i => i.id !== id); refreshLobby(); }
+});
+ui.on('lobby-decline-invite', async (id) => {
+  lobby.invites = lobby.invites.filter(i => i.id !== id);
+  refreshLobby();
+  try { await net.declineInvite(id); } catch { /* already gone */ }
+});
+ui.on('copy-invite', async () => {
+  const link = platform.inviteLink();
+  if (!link) return;
+  const t = platformStrings();
+  try { await navigator.clipboard.writeText(link); ui.toast(t.inviteCopied); }
+  catch { ui.toast(t.inviteFailed); }
+});
 
 ui.on('show-lobby', async () => {
   app.screen = 'lobby';
@@ -925,7 +989,10 @@ ui.on('show-lobby', async () => {
   net.name = yourName();
   if (HOSTED_ROOMS) {
     lobby.status = 'Create a room and an opponent can quick-join it, or quick-join an open table yourself.';
+    lobby.friends = null;
+    lobby.invites = [];
     refreshLobby();
+    loadIncomingInvites();
     return;
   }
   lobby.status = 'Connecting…';
@@ -965,7 +1032,7 @@ ui.on('lobby-quick-join', async () => {
   }
 });
 ui.on('lobby-start-ai', () => net.startVsAI());
-ui.on('lobby-leave', () => { net.leave(); lobby.roomCode = null; lobby.joined = false; lobby.players = []; goTitle(); });
+ui.on('lobby-leave', () => { net.leave(); lobby.roomCode = null; lobby.joined = false; lobby.players = []; lobby.friends = null; goTitle(); });
 ui.on('lobby-chat', (text) => net.sendChat(text));
 
 net.on('created', (m) => {
@@ -979,6 +1046,7 @@ net.on('created', (m) => {
     ? 'Room open. Waiting for an opponent to quick-join, or start against the AI.'
     : 'Room created. Share the code, or start against the AI.';
   refreshLobby();
+  if (HOSTED_ROOMS) loadFriendsForInvite();
 });
 net.on('joined', (m) => {
   lobby.joined = true;

@@ -6,6 +6,7 @@ import { ACHIEVEMENTS, THEMES, JOURNEY, CHALLENGES, LESSONS, dailyConfig } from 
 import { TERMINAL } from './rules.js';
 import { PRESETS, CATEGORIES, presetTier, withPreset } from './gfx.js';
 import { gfxStrings } from './gfx-strings.js';
+import { platformStrings } from './platform-strings.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -208,6 +209,7 @@ export class UI {
             el('button', { class: 'btn small', onclick: () => this.emit('show-leaderboard') }, 'Leaderboards'),
             el('button', { class: 'btn small', onclick: () => this.emit('show-settings') }, 'Settings'),
             el('button', { class: 'btn small', onclick: () => this.emit('show-help') }, 'How to Play'),
+            ...this.accountButtons(),
           ),
         ),
         el('div', { class: 'rail' },
@@ -217,10 +219,19 @@ export class UI {
             el('button', { class: 'btn small', onclick: () => this.emit('show-leaderboard') }, 'Leaderboards'),
             el('button', { class: 'btn small', onclick: () => this.emit('show-settings') }, 'Settings'),
             el('button', { class: 'btn small', onclick: () => this.emit('show-help') }, 'How to Play'),
+            ...this.accountButtons(),
           ),
         ),
       ),
     ));
+  }
+
+  /** Sign-in (platform host without a token) / Invite a friend (signed in). */
+  accountButtons() {
+    const t = platformStrings();
+    if (this.platform.canSignIn) return [el('button', { class: 'btn small btn-signin', onclick: () => this.platform.signIn() }, t.signIn)];
+    if (this.platform.hosted) return [el('button', { class: 'btn small btn-invite-link', onclick: () => this.emit('copy-invite') }, t.invite)];
+    return [];
   }
 
   // ---------------------------------------------------------------- lists
@@ -391,7 +402,8 @@ export class UI {
   // ---------------------------------------------------------------- help
 
   showHelp(opts = {}) {
-    const k = this.platform.settings.keys;
+    const map = this.platform.keyMap();
+    const k = Object.fromEntries(Object.entries(map).map(([a, codes]) => [a, codes.map(prettyKey).join('/')]));
     const card = (title, body) => el('div', { class: 'meta-cell' },
       el('b', { text: title, style: 'font-size:0.95rem' }), body);
     this.show('help', () => el('section', { role: 'dialog', 'aria-label': 'How to play' },
@@ -399,11 +411,11 @@ export class UI {
         el('h2', { text: 'How to Play' }),
         el('p', { text: 'Defend the glowing goal at your end. Strike the puck into your opponent\u2019s goal. First to the target score wins.' }),
         el('div', { class: 'meta-grid' },
-          card('Move', `Drag anywhere in your half, or use ${prettyKey(k.up)}/${prettyKey(k.down)}/${prettyKey(k.left)}/${prettyKey(k.right)}. Your mallet cannot cross the centre line.`),
+          card('Move', `Drag anywhere in your half, or use ${k.up}/${k.down}/${k.left}/${k.right}. Your mallet cannot cross the centre line.`),
           card('Strike', 'Meet the puck with your mallet. Hit through it toward the far goal; faster mallets strike harder.'),
           card('Defend', 'Guard your goal mouth when the puck approaches. Blocks from deep in your half count as saves.'),
           card('Rails', 'The luminous rails are live — bank shots off them to bend around defenders.'),
-          card('Pause', `${prettyKey(k.pause)} pauses. ${prettyKey(k.undo)} undoes in Practice. ${prettyKey(k.camera)} recentres the camera.`),
+          card('Pause', `${k.pause} pauses. ${k.undo} undoes in Practice. ${k.camera} recentres the camera.`),
           card('Gamepad', 'Left stick moves, Start pauses. Buttons can be remapped by your platform.'),
         ),
         el('div', { class: 'btn-row' },
@@ -436,12 +448,12 @@ export class UI {
       }, options.map(([v, t]) => el('option', { value: v, text: t, selected: s[key] === v }))));
 
     const keyRow = (label, key) => {
-      const btn = el('button', { class: 'btn small', text: prettyKey(s.keys[key]), 'aria-label': `Remap ${label}` });
+      const btn = el('button', { class: 'btn small', 'data-key-action': key, text: P.keyMap()[key].map(prettyKey).join(' / '), 'aria-label': `Remap ${label}` });
       btn.addEventListener('click', () => {
         btn.textContent = 'press a key…';
         const onKey = (e) => {
           e.preventDefault();
-          P.updateSettings({ keys: { ...P.settings.keys, [key]: e.code } });
+          P.setKey(key, e.code);
           btn.textContent = prettyKey(e.code);
           window.removeEventListener('keydown', onKey, true);
         };
@@ -477,7 +489,9 @@ export class UI {
           toggle('Haptics', 'haptics'),
           keyRow('Move up', 'up'), keyRow('Move down', 'down'),
           keyRow('Move left', 'left'), keyRow('Move right', 'right'),
-          keyRow('Pause', 'pause'), keyRow('Undo', 'undo'), keyRow('Camera reset', 'camera'),
+          keyRow('Pause', 'pause'), keyRow('Undo', 'undo'), keyRow('Camera reset', 'camera'), keyRow('Hint', 'hint'),
+          el('div', { class: 'setting-row' },
+            el('button', { class: 'btn small', id: 'reset-keys', onclick: () => { P.resetKeys(); this.showSettings(opts); } }, platformStrings().resetKeys)),
         ),
         el('div', { class: 'settings-group' },
           el('h3', { text: 'Text & Privacy' }),
@@ -653,6 +667,22 @@ export class UI {
             state.canStartAI ? el('button', { class: 'btn', onclick: () => this.emit('lobby-start-ai') }, 'Start vs AI') : null,
             el('button', { class: 'btn danger', onclick: () => this.emit('lobby-leave') }, state.joined ? 'Leave Room' : 'Back'),
           ),
+          state.friends ? el('div', { class: 'invite-panel' },
+            el('h3', { text: platformStrings().inviteFriends }),
+            state.friends.length
+              ? el('div', { class: 'list' }, state.friends.map(f => el('div', { class: 'list-item' },
+                  el('span', { text: `${f.name} · ${f.online ? platformStrings().online : platformStrings().offline}` }),
+                  f.invited
+                    ? el('span', { class: 'dim', text: platformStrings().invited })
+                    : el('button', { class: 'btn small', 'data-invite-user': f.userId, onclick: () => this.emit('lobby-invite-friend', f.userId) }, platformStrings().inviteBtn))))
+              : el('p', { class: 'dim', text: platformStrings().noFriends })) : null,
+          state.invites?.length ? el('div', { class: 'invite-panel' },
+            el('h3', { text: platformStrings().roomInvites }),
+            el('div', { class: 'list' }, state.invites.map(inv => el('div', { class: 'list-item' },
+              el('span', { text: platformStrings().inviteFrom.replace('{name}', inv.name) }),
+              el('span', { style: 'display:flex;gap:6px' },
+                el('button', { class: 'btn small primary', 'data-accept-invite': inv.id, onclick: () => this.emit('lobby-accept-invite', inv.id) }, platformStrings().accept),
+                el('button', { class: 'btn small', onclick: () => this.emit('lobby-decline-invite', inv.id) }, platformStrings().decline)))))) : null,
           state.joined ? el('details', { class: 'chat-panel' },
             el('summary', { text: 'Chat' }),
             chatLog,
@@ -681,5 +711,5 @@ export class UI {
 }
 
 function prettyKey(code) {
-  return code.replace(/^Key/, '').replace(/^Arrow/, '').replace('Escape', 'Esc');
+  return String(code).replace(/^Key/, '').replace(/^Arrow/, '').replace('Escape', 'Esc');
 }

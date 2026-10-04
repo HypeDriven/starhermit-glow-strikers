@@ -25,8 +25,8 @@
  * error / pageerror.
  *
  * Self-contained: embeds a minimal static server on an ephemeral port, plus
- * stubs for the two benign endpoints the client polls (GET /api/v1/time,
- * POST /api/v1/presence). The repo's server.js is the StarHermit
+ * StarHermit platform mocks (and a bare /ws/v1/realtime accept) for a final
+ * signed-in pass; the standalone passes must make no /api call. The repo's server.js is the StarHermit
  * authoritative game server and is intentionally NOT spawned; hosted play is
  * therefore covered only up to the lobby's offline fallback message, and the
  * resulting expected WebSocket handshake console error is filtered via
@@ -42,6 +42,7 @@
  * Run: npm run test:e2e
  */
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,17 +66,44 @@ const browserNoise = /GL Driver Message|GPU stall due to ReadPixels|Automatic fa
 // Expected exactly once when the lobby probe runs without server.js.
 const wsOfflineNoise = /^WebSocket connection to 'ws:\/\/localhost:\d+\/ws' failed/;
 
+// StarHermit platform mocks for the signed-in pass; standalone passes must
+// make no /api call (apiLog is checked after each of them).
+const apiLog = [];
+function platformMock(req, res, p) {
+  apiLog.push(`${req.method} ${p}`);
+  const json = (b, st = 200) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(b === null ? '' : JSON.stringify(b)); };
+  if (p.endsWith('/profile')) return json({ username: 'raw_user', nickname: p.includes('friend-1') ? 'Puck Pal' : 'Neon Ace' });
+  if (p.endsWith('/games/glow-test/settings') && req.method === 'GET') return json({ settings: { volumeMusic: 0.25 } });
+  if (p.endsWith('/games/glow-test/settings')) return json({ settings: {} });
+  if (p.endsWith('/games/glow-test/controls')) return json(req.method === 'GET' ? { actions: [{ action: 'hint', codes: ['KeyG'] }] } : {});
+  if (p.endsWith('/cloud-saves/game:glow-test/info')) return json({ exists: false });
+  if (p.endsWith('/cloud-saves/game:glow-test')) return json({});
+  if (p === '/api/v1/me/friends') return json([{ userId: 'friend-1', username: 'raw_friend', online: true }]);
+  if (p === '/api/v1/realtime/rooms/invites') return json([{ id: 'inv-9', fromUserId: 'friend-1' }]);
+  if (p === '/api/v1/realtime/rooms/invites/inv-9/decline') return json({});
+  if (p === '/api/v1/realtime/rooms') return json({ id: 'room-1' });
+  if (p === '/api/v1/realtime/rooms/room-1/open') return json({ id: 'room-1' });
+  if (p === '/api/v1/realtime/rooms/room-1/invites') return json({ id: 'inv-1' });
+  if (p === '/api/v1/realtime/rooms/room-1/leave') return json({});
+  return json({ error: 'not found' }, 404);
+}
+
+// Minimal WebSocket accept for /ws/v1/realtime so a mocked room can open (no frames).
+const upgraded = new Set();
+function acceptRealtimeUpgrade(req, socket) {
+  if (!req.url.startsWith('/ws/v1/realtime')) { socket.destroy(); return; }
+  upgraded.add(socket);
+  socket.on('close', () => upgraded.delete(socket));
+  const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  socket.on('data', () => {});
+  socket.on('error', () => {});
+}
+
 function createServer() {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/api/v1/time') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ now: Date.now() }));
-    }
-    if (url.pathname === '/api/v1/presence' && req.method === 'POST') {
-      res.writeHead(204);
-      return res.end();
-    }
+    if (url.pathname.startsWith('/api/')) return platformMock(req, res, decodeURIComponent(url.pathname));
     let p;
     try {
       p = decodeURIComponent(url.pathname);
@@ -603,6 +631,69 @@ async function mobilePass(browser, base) {
   return errors;
 }
 
+// Signed-in launch (#game_token) against the platform mocks.
+async function signedInPass(browser, base) {
+  const { context, page, errors, step } = await newPassPage(browser, 'signed-in', { width: 1280, height: 800 }, false);
+  await page.addInitScript(() => {
+    window.__copied = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied.push(t); } } });
+  });
+  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const token = 'h.' + b64u({ sub: 'user-ace-1', game_scope: 'glow-test', exp: Math.floor(Date.now() / 1000) + 3600 }) + '.s';
+  try {
+    await step('launch token → nickname, synced settings', async () => {
+      await page.goto(`${base}/#game_token=${token}`, { waitUntil: 'load' });
+      await page.waitForFunction(() => window.__gs?.app?.screen === 'title');
+      if (new URL(page.url()).hash) throw new Error('launch token left in the URL');
+      await page.waitForFunction(() => /Playing as Neon Ace/.test(document.getElementById('account-line')?.textContent || ''));
+      await page.waitForFunction(() => window.__gs.platform.settings.volumeMusic === 0.25);
+      if (await page.locator('.btn-signin:visible').count()) throw new Error('sign-in shown while signed in');
+    });
+    await step('invite link copied from the visible title button', async () => {
+      await page.waitForFunction(() => window.__gs?.app?.screen === 'title');
+      await page.locator('.btn-invite-link:visible').first().click();
+      await page.waitForFunction(() => window.__copied.length === 1);
+      const link = await page.evaluate(() => window.__copied[0]);
+      if (!/\/game-invite\/user-ace-1\/glow-test$/.test(link)) throw new Error('bad invite link ' + link);
+      await page.screenshot({ path: shot('title', 'signed-in') });
+    });
+    await step('room invites: incoming invite declined, friend invited into a created room', async () => {
+      await page.getByRole('button', { name: /^Hosted Play/ }).click();
+      await page.waitForSelector('[data-accept-invite="inv-9"]');
+      if (!/Puck Pal invited you/.test(await page.textContent('.invite-panel'))) throw new Error('incoming invite not named');
+      await page.getByRole('button', { name: 'Decline' }).click();
+      await page.waitForFunction(() => !document.querySelector('[data-accept-invite]'));
+      await page.getByRole('button', { name: 'Create Room' }).click();
+      await page.waitForSelector('[data-invite-user="friend-1"]');
+      await page.locator('[data-invite-user="friend-1"]').click();
+      await page.waitForFunction(() => /Invited/.test(document.querySelector('.invite-panel')?.textContent || ''));
+      if (!apiLog.includes('POST /api/v1/realtime/rooms/room-1/invites')) throw new Error('invite not sent');
+      await page.screenshot({ path: shot('lobby', 'signed-in') });
+      await page.getByRole('button', { name: 'Leave Room' }).click();
+      await page.waitForFunction(() => window.__gs?.app?.screen === 'title');
+    });
+    await step('remap through Settings persists to platform controls; cloud slot seeded', async () => {
+      await page.getByRole('button', { name: 'Settings' }).first().click();
+      const hintBtn = page.locator('[data-key-action="hint"]');
+      if ((await hintBtn.textContent()).trim() !== 'G') throw new Error('settings do not show the platform binding');
+      await hintBtn.click();
+      await page.keyboard.press('KeyJ');
+      for (let i = 0; i < 30 && !apiLog.includes('PUT /api/v1/games/glow-test/controls'); i++) await page.waitForTimeout(100);
+      if (!apiLog.includes('PUT /api/v1/games/glow-test/controls')) throw new Error('remap not saved to the platform');
+      for (let i = 0; i < 40 && !apiLog.includes('PUT /api/v1/me/cloud-saves/game:glow-test'); i++) await page.waitForTimeout(100);
+      if (!apiLog.includes('PUT /api/v1/me/cloud-saves/game:glow-test')) throw new Error('cloud slot not written');
+      if (!apiLog.includes('PATCH /api/v1/games/glow-test/settings')) {
+        await page.locator('#set-volumeMusic').fill('0.5');
+        for (let i = 0; i < 20 && !apiLog.includes('PATCH /api/v1/games/glow-test/settings'); i++) await page.waitForTimeout(100);
+      }
+      if (!apiLog.includes('PATCH /api/v1/games/glow-test/settings')) throw new Error('settings not patched');
+    });
+  } finally {
+    await context.close();
+  }
+  return errors;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -620,6 +711,7 @@ try {
     args: ['--no-sandbox', '--enable-unsafe-swiftshader'],
   });
 
+  server.on('upgrade', acceptRealtimeUpgrade);
   allErrors.push(...await desktopPass(browser, base));
   if (allErrors.length) {
     throw new Error('page errors after desktop pass:\n' + allErrors.join('\n'));
@@ -628,11 +720,15 @@ try {
   if (allErrors.length) {
     throw new Error('page errors:\n' + allErrors.join('\n'));
   }
+  if (apiLog.length) throw new Error('standalone passes made platform calls: ' + apiLog.join(', '));
+  allErrors.push(...await signedInPass(browser, base));
+  if (allErrors.length) throw new Error('page errors:\n' + allErrors.join('\n'));
   console.log('\nE2E PASS — glow-strikers, desktop + mobile, no page errors');
 } catch (e) {
   console.error(`\nE2E FAIL — ${e.message ?? e}`);
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close().catch(() => {});
+  for (const sock of upgraded) sock.destroy();
   await new Promise((resolve) => server.close(resolve));
 }

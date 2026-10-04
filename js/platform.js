@@ -1,141 +1,30 @@
 // Platform layer: per-game settings, versioned+checksummed local save,
-// host time synchronization, achievements, leaderboards, telemetry consent,
-// and presence heartbeats. No credentials or tokens are ever persisted.
+// achievements, leaderboards and telemetry consent, plus the StarHermit
+// surface over window.StarHermit (starhermit-sdk.js, loaded by index.html
+// before the game modules). No credentials or tokens are ever persisted.
 //
-// Hosted mode (StarHermit platform) activates only when a launch token was
-// read from the URL: fragment #game_token=<jwt> (read once, then stripped;
-// query ?token=/&launch=/&launch_token= remain as local-dev fallbacks). The
-// JWT payload (base64url decode, no verify) carries sub (user id) and
-// game_scope (this game's slug). The token lives in memory only and is
-// re-minted every 45 min via POST /api/v1/games/{slug}/launch-token.
+// Hosted mode activates only when the SDK read a launch token (#game_token=…
+// library launch or #access_token=… sign-in return; stripped from the URL).
+// The SDK renews it, and owns the cloud-save slot game:<slug>, the settings
+// KV and the controls endpoint. Without a token nothing touches the network.
 
 import { hashValue } from './rng.js';
 import { ACHIEVEMENTS, CONTENT_VERSION, RULESET_ID } from './content.js';
 
-// --- minimal ZIP writer/reader (stored entries only, no compression) ---------
-// Cloud saves travel as ONE zip+base64 slot; saves are small JSON.
+const sdk = () => globalThis.StarHermit ?? null;
 
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
+/** Keyboard actions → default KeyboardEvent.code lists (control.* in starhermit.txt). */
+export const DEFAULT_KEYS = {
+  up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
+  pause: ['Escape'], undo: ['KeyZ'], camera: ['KeyC'], hint: ['KeyH'],
+};
 
-function crc32(bytes) {
-  let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function zipStore(name, dataBytes) {
-  const enc = new TextEncoder();
-  const nameB = enc.encode(name);
-  const crc = crc32(dataBytes);
-  const out = [];
-  const u16 = (v) => out.push(v & 0xff, (v >> 8) & 0xff);
-  const u32 = (v) => out.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  u32(0x04034b50); u16(20); u16(0); u16(0); u16(0); u16(0);
-  u32(crc); u32(dataBytes.length); u32(dataBytes.length);
-  u16(nameB.length); u16(0);
-  const head = new Uint8Array(out);
-  const cd = [];
-  const c16 = (v) => cd.push(v & 0xff, (v >> 8) & 0xff);
-  const c32 = (v) => cd.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  c32(0x02014b50); c16(20); c16(20); c16(0); c16(0); c16(0); c16(0);
-  c32(crc); c32(dataBytes.length); c32(dataBytes.length);
-  c16(nameB.length); c16(0); c16(0); c16(0); c16(0); c32(0); c32(0);
-  const cdHead = new Uint8Array(cd);
-  const cdOff = head.length + nameB.length + dataBytes.length;
-  const parts = [head, nameB, dataBytes, cdHead, nameB];
-  const eocd = [];
-  const e32 = (v) => eocd.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
-  const e16 = (v) => eocd.push(v & 0xff, (v >> 8) & 0xff);
-  e32(0x06054b50); e16(0); e16(0); e16(1); e16(1);
-  e32(cdHead.length + nameB.length); e32(cdOff); e16(0);
-  parts.push(new Uint8Array(eocd));
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const buf = new Uint8Array(total);
-  let o = 0;
-  for (const p of parts) { buf.set(p, o); o += p.length; }
-  return buf;
-}
-
-function unzipFirstEntry(zipBytes) {
-  // Stored single-entry reader: scan local headers for compression 0.
-  const dv = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
-  let off = 0;
-  while (off + 30 <= zipBytes.length && dv.getUint32(off, true) === 0x04034b50) {
-    const method = dv.getUint16(off + 8, true);
-    const size = dv.getUint32(off + 18, true);
-    const nameLen = dv.getUint16(off + 26, true);
-    const extraLen = dv.getUint16(off + 28, true);
-    const dataOff = off + 30 + nameLen + extraLen;
-    if (method !== 0) throw new Error('unsupported zip entry');
-    return zipBytes.slice(dataOff, dataOff + size);
-  }
-  throw new Error('bad zip');
-}
-
-function bytesToBase64(bytes) {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(s);
-}
-
-function base64ToBytes(b64) {
-  const s = atob(b64);
-  const b = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
-  return b;
-}
-
-// --- launch token --------------------------------------------------------------
-
-/** Read the launch token once, then strip it from the URL. Returns null offline. */
-function readLaunchToken() {
-  if (typeof location === 'undefined' || typeof history === 'undefined') return null;
-  if (location.hash.length > 1) {
-    try {
-      const params = new URLSearchParams(location.hash.slice(1));
-      const token = params.get('game_token');
-      if (token) {
-        params.delete('game_token');
-        params.delete('session_id');
-        const rest = params.toString();
-        history.replaceState(null, '', location.pathname + location.search + (rest ? `#${rest}` : ''));
-        return token;
-      }
-    } catch { /* malformed fragment; fall through to query */ }
-  }
-  // Local-dev fallbacks only — the platform always delivers the fragment.
-  try {
-    const q = new URLSearchParams(location.search);
-    const token = q.get('token') ?? q.get('launch') ?? q.get('launch_token');
-    if (token) history.replaceState(null, '', location.pathname + location.hash);
-    return token;
-  } catch {
-    return null;
-  }
-}
-
-/** Decode a JWT payload segment (base64url) without verifying the signature. */
-function decodeJwtPayload(token) {
-  try {
-    const seg = token.split('.')[1];
-    const b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
-    const json = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
-    const claims = JSON.parse(json);
-    return claims && typeof claims === 'object' ? claims : null;
-  } catch {
-    return null;
-  }
-}
+/** Preferences mirrored to the platform settings KV (same keys as save.settings). */
+export const SYNCED_SETTINGS = [
+  'volumeMusic', 'volumeEffects', 'volumeAmbience', 'volumeVoice', 'muted', 'graphics',
+  'reducedMotion', 'highContrast', 'palette', 'textScale', 'leftHanded', 'holdToAim',
+  'timingAssist', 'haptics', 'captions',
+];
 
 const SAVE_KEY = 'glow-strikers.save.v1';
 const SAVE_VERSION = 1;
@@ -191,36 +80,43 @@ function defaultSave() {
 }
 
 export class Platform {
-  constructor() {
+  constructor(sh = sdk()) {
+    this.sh = sh;
+    if (sh && !sh.__glowInit) { sh.__glowInit = true; sh.init(); }
     this.save = defaultSave();
-    this.timeOffset = 0;        // server - client (ms)
-    this.timeSynced = false;
     this.telemetryQueue = [];
-    this.online = false;
-    // Hosted identity + cloud state (all in-memory; nothing persisted).
-    this.token = readLaunchToken();
-    this.claims = this.token ? decodeJwtPayload(this.token) : null;
-    this.sub = typeof this.claims?.sub === 'string' ? this.claims.sub : null;
-    this.gameSlug = typeof this.claims?.game_scope === 'string' ? this.claims.game_scope : null;
     this.nickname = null;              // resolved async from the profile route
     this.syncStatus = 'offline';       // offline | saving | synced
     this.onSync = null;                // fn(status) — sync status display hook
-    this._profileCache = new Map();
-    this._cloudTimer = null;
-    this._refreshTimer = null;
-    if (this.token) {
-      this._scheduleRefresh(45 * 60 * 1000);
-      this._installCloudFlush();
+    this.onSignedOut = null;           // fn() — renewal refused: back to local play
+    this.keyBindings = null;           // platform bindings ({ action: codes[] }) when hosted
+    this._lastSettings = null;
+    if (sh) {
+      sh.on('saved', (ok) => this._setSync(ok ? 'synced' : 'offline'));
+      sh.on('auth', (a) => {
+        if (a.signedIn) return;
+        this.keyBindings = null;
+        this._setSync('offline');
+        this.onSignedOut?.();
+      });
     }
   }
 
-  /** True when a platform launch token is in memory. */
-  get hosted() { return !!this.token; }
+  /** True when the SDK holds a platform launch token. */
+  get hosted() { return !!(this.sh?.signedIn && this.sh.slug); }
+  get token() { return this.hosted ? this.sh.token : null; }
+  get sub() { return this.sh?.userId ?? null; }
+  get gameSlug() { return this.sh?.slug ?? null; }
+  get canSignIn() { return !!this.sh?.canSignIn(); }
+  signIn() { return !!this.sh?.signIn(); }
+  /** Share link that friends the recipient and invites them back (null signed out). */
+  inviteLink() { return this.hosted ? this.sh.inviteLink() : null; }
 
-  /** Display name: profile nickname, else "Player " + id8. Null when anonymous. */
+  /** Display name: profile nickname, else "Player " + id. Null when anonymous. */
   get displayName() {
+    if (!this.hosted) return null;
     if (this.nickname) return this.nickname;
-    return this.sub ? `Player ${this.sub.slice(0, 8)}` : null;
+    return this.sub ? `Player ${this.sub.slice(0, 6)}` : null;
   }
 
   /** Title-screen identity line; '' offline. */
@@ -238,79 +134,52 @@ export class Platform {
 
   // --- hosted API ------------------------------------------------------------
 
-  /** Fetch a platform API path with the launch token. Throws when offline. */
-  async api(path, opts = {}) {
-    if (!this.token) throw new Error('offline');
-    const headers = { ...(opts.headers ?? {}) };
-    headers.authorization = `Bearer ${this.token}`;
-    if (opts.body && !headers['content-type']) headers['content-type'] = 'application/json';
-    return fetch(path, { ...opts, headers });
-  }
-
-  _scheduleRefresh(delayMs) {
-    if (typeof setTimeout === 'undefined') return;
-    clearTimeout(this._refreshTimer);
-    this._refreshTimer = setTimeout(() => this.refreshToken(), delayMs);
-    this._refreshTimer.unref?.();
-  }
-
-  /** Re-mint the scoped launch token; failures retry in ~60 s. */
-  async refreshToken() {
-    if (!this.token || !this.gameSlug) return;
-    try {
-      const res = await this.api(`/api/v1/games/${encodeURIComponent(this.gameSlug)}/launch-token`, { method: 'POST' });
-      if (!res.ok) throw new Error(String(res.status));
-      const body = await res.json();
-      if (body && typeof body.token === 'string' && body.token) this.token = body.token;
-      this._scheduleRefresh(45 * 60 * 1000);
-    } catch {
-      this._scheduleRefresh(60 * 1000);
-    }
-  }
-
   /**
-   * Resolve a user id to a display nickname (cached). Never returns usernames;
-   * falls back to "Player " + id8. Anonymous/offline callers get the fallback.
+   * Authenticated platform call through the SDK, returned as a minimal
+   * Response-like object ({ ok, status, json() }) for the rooms client.
+   * SDK null (404 / 204) reads as status 404.
    */
-  async profileFor(userId) {
-    if (this._profileCache.has(userId)) return this._profileCache.get(userId);
-    let rec = null;
-    if (this.token) {
-      try {
-        const res = await this.api(`/api/v1/users/${encodeURIComponent(userId)}/profile`);
-        if (res.ok) rec = await res.json();
-      } catch { /* offline; fall back below */ }
+  async api(path, opts = {}) {
+    if (!this.hosted) throw new Error('offline');
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
+    try {
+      const data = await this.sh.api(path, { method: opts.method ?? 'GET', body });
+      return data == null
+        ? { ok: false, status: 404, json: async () => null }
+        : { ok: true, status: 200, json: async () => data };
+    } catch (e) {
+      return { ok: false, status: e?.status ?? 0, json: async () => e?.body ?? null };
     }
-    const nick = rec && typeof rec.nickname === 'string' && rec.nickname.trim()
-      ? rec.nickname.trim()
-      : `Player ${String(userId).slice(0, 8)}`;
-    this._profileCache.set(userId, nick);
-    return nick;
+  }
+
+  /** Resolve a user id to a display nickname (SDK-cached); "Player <id>" fallback. */
+  async profileFor(userId) {
+    const p = this.hosted ? await this.sh.profile(userId).catch(() => null) : null;
+    return p?.displayName ?? `Player ${String(userId).slice(0, 6)}`;
   }
 
   /** Load the signed-in player's profile into displayName. */
   async fetchProfile() {
-    if (!this.sub) return null;
+    if (!this.hosted || !this.sub) return null;
     this.nickname = await this.profileFor(this.sub);
     return this.nickname;
   }
 
+  /** Friends with online state, for room invites. */
+  friends() { return this.hosted ? this.sh.friends() : Promise.resolve([]); }
+
   /** Read-only platform leaderboard (clients can never submit scores). */
   async fetchPlatformLeaderboard({ page = 0, pageSize = 20, friendsOnly = false } = {}) {
-    if (!this.token || !this.gameSlug) return null;
+    if (!this.hosted) return null;
     try {
-      const g = await this.api(`/api/v1/games/${encodeURIComponent(this.gameSlug)}`);
-      if (!g.ok) return null;
-      const info = await g.json();
+      const info = await this.sh.getGame();
       const leaderboardId = info?.leaderboardId ?? null;
       const base = { me: info?.me ?? null, leaderboardId, entries: [] };
       if (!leaderboardId) return base;
       const qs = `?friendsOnly=${friendsOnly ? 'true' : ''}&page=${page}&pageSize=${pageSize}`;
-      const e = await this.api(`/api/v1/leaderboards/${encodeURIComponent(leaderboardId)}/entries${qs}`);
-      if (!e.ok) return base;
-      const data = await e.json();
-      const rows = Array.isArray(data) ? data : (data?.entries ?? []);
-      base.entries = [];
+      const data = await this.sh.api(`/api/v1/leaderboards/${encodeURIComponent(leaderboardId)}/entries${qs}`).catch(() => null);
+      if (!data) return base;
+      const rows = Array.isArray(data) ? data : (data?.entries ?? data?.items ?? []);
       for (const r of rows) {
         const userId = r?.userId ?? r?.playerId ?? null;
         base.entries.push({
@@ -328,60 +197,28 @@ export class Platform {
     }
   }
 
-  // --- cloud save (mirror of the checksummed local doc) ------------------------
-
-  _installCloudFlush() {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-    const flush = () => {
-      if (!this._cloudTimer) return;
-      clearTimeout(this._cloudTimer);
-      this._cloudTimer = null;
-      this._pushCloudSave(true);
-    };
-    window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
-  }
+  // --- cloud save (mirror of the checksummed local doc, slot game:<slug>) ------
 
   _queueCloudSave() {
-    if (!this.token || !this.gameSlug) return;
+    if (!this.hosted) return;
     this._setSync('saving');
-    clearTimeout(this._cloudTimer);
-    this._cloudTimer = setTimeout(() => {
-      this._cloudTimer = null;
-      this._pushCloudSave(false);
-    }, 2000);
-    this._cloudTimer.unref?.();
+    const payload = JSON.stringify(this.save);
+    this.sh.saveJSON({ checksum: hashValue(payload), payload });
   }
 
-  async _pushCloudSave(keepalive) {
-    if (!this.token || !this.gameSlug) return;
-    try {
-      const payload = JSON.stringify(this.save);
-      const wrapped = JSON.stringify({ checksum: hashValue(payload), payload });
-      const zip = zipStore('save.json', new TextEncoder().encode(wrapped));
-      const res = await fetch(`/api/v1/me/cloud-saves/${encodeURIComponent(this.gameSlug)}`, {
-        method: 'PUT',
-        headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ dataBase64: bytesToBase64(zip) }),
-        keepalive,
-      });
-      this._setSync(res.ok ? 'synced' : 'offline');
-    } catch {
-      this._setSync('offline');
-    }
-  }
+  /** Flush the debounced cloud save (pagehide / hidden). */
+  flushCloud() { return this.hosted ? this.sh.flushSave(true) : Promise.resolve(false); }
 
   /**
    * Load the remote save slot; on success the remote doc wins (same checksum +
    * version validation as the local path) and the local cache is rewritten.
+   * An empty slot is seeded from the local doc.
    */
   async cloudLoad() {
-    if (!this.token || !this.gameSlug) return false;
-    const res = await this.api(`/api/v1/me/cloud-saves/${encodeURIComponent(this.gameSlug)}`);
-    if (res.status === 404) { this._setSync('synced'); return false; }
-    if (!res.ok) throw new Error(String(res.status));
-    const zipBytes = new Uint8Array(await res.arrayBuffer());
-    const wrapped = JSON.parse(new TextDecoder().decode(unzipFirstEntry(zipBytes)));
+    if (!this.hosted) return false;
+    const info = await this.sh.saveInfo();
+    const wrapped = info && info.exists === false ? null : await this.sh.loadJSON();
+    if (!wrapped) { this._queueCloudSave(); return false; }
     if (wrapped.checksum !== hashValue(wrapped.payload)) throw new Error('save checksum mismatch');
     this.save = migrate(JSON.parse(wrapped.payload));
     this._writeLocal();
@@ -389,13 +226,73 @@ export class Platform {
     return true;
   }
 
-  /** Boot handshake for hosted mode: profile first, then the remote save doc. */
+  /** Apply platform preferences over the local ones (type-checked); true when changed. */
+  applyRemoteSettings(remote) {
+    let changed = false;
+    for (const k of SYNCED_SETTINGS) {
+      const v = remote?.[k];
+      if (v == null) continue;
+      const ok = k === 'graphics' ? typeof v === 'object' && !Array.isArray(v) : typeof v === typeof DEFAULT_SETTINGS[k];
+      if (ok && JSON.stringify(v) !== JSON.stringify(this.save.settings[k])) { this.save.settings[k] = v; changed = true; }
+    }
+    if (changed) this._writeLocal();
+    this._lastSettings = JSON.stringify(this._settingsSubset());
+    return changed;
+  }
+
+  _settingsSubset() {
+    const out = {};
+    for (const k of SYNCED_SETTINGS) out[k] = this.save.settings[k];
+    return out;
+  }
+
+  _syncSettings() {
+    if (!this.hosted || this._lastSettings === null) return;
+    const subset = this._settingsSubset();
+    const json = JSON.stringify(subset);
+    if (json === this._lastSettings) return;
+    this._lastSettings = json;
+    clearTimeout(this._settingsTimer);
+    this._settingsTimer = setTimeout(() => this.sh.patchSettings(subset), 400);
+  }
+
+  /** Boot handshake for hosted mode: profile, remote save doc, settings, bindings. */
   async initHosted() {
     if (!this.hosted) return false;
     let remote = false;
-    try { await this.fetchProfile(); } catch { /* nickname falls back to Player id8 */ }
+    try { await this.fetchProfile(); } catch { /* nickname falls back to Player id */ }
     try { remote = await this.cloudLoad(); } catch { /* local doc stays authoritative */ }
+    try { if (this.applyRemoteSettings(await this.sh.getSettings())) remote = true; } catch { /* local prefs */ }
+    try { this.keyBindings = await this.sh.loadBindings(DEFAULT_KEYS); } catch { /* defaults */ }
     return remote;
+  }
+
+  // --- keyboard bindings ---------------------------------------------------------
+
+  /** Effective bindings { action: codes[] }: platform when hosted, else local remaps. */
+  keyMap() {
+    if (this.hosted && this.keyBindings) return { ...DEFAULT_KEYS, ...this.keyBindings };
+    const local = this.save.settings.keys ?? {};
+    const out = {};
+    for (const a of Object.keys(DEFAULT_KEYS)) out[a] = local[a] ? [local[a]] : DEFAULT_KEYS[a].slice();
+    return out;
+  }
+
+  /** Remap one action (press-to-bind): platform controls when hosted, local save otherwise. */
+  setKey(action, code) {
+    if (this.hosted) {
+      this.keyBindings = { ...this.keyMap(), [action]: [code] };
+      this.sh.setControl(action, [code]).catch(() => {});
+    }
+    this.updateSettings({ keys: { ...this.save.settings.keys, [action]: code } });
+  }
+
+  /** Restore default bindings everywhere. */
+  resetKeys() {
+    if (this.hosted) { this.keyBindings = null; this.sh.resetControls(); }
+    const keys = {};
+    for (const [a, codes] of Object.entries(DEFAULT_KEYS)) keys[a] = codes[0];
+    this.updateSettings({ keys });
   }
 
   // --- persistence ---------------------------------------------------------
@@ -427,6 +324,7 @@ export class Platform {
   persist() {
     this._writeLocal();
     this._queueCloudSave();   // cloud is a mirror; localStorage stays the cache
+    this._syncSettings();     // changed preferences → settings KV
   }
 
   get settings() { return this.save.settings; }
@@ -437,34 +335,11 @@ export class Platform {
     this.track('settings_change', { keys: Object.keys(patch).sort().join(',') });
   }
 
-  // --- host time sync --------------------------------------------------------
+  // --- clock ---------------------------------------------------------------
 
-  /** Round-trip-adjusted offset from GET /api/v1/time; falls back to local. */
-  async syncTime() {
-    try {
-      const t0 = Date.now();
-      const res = await fetch('/api/v1/time', {
-        cache: 'no-store',
-        headers: this.token ? { authorization: `Bearer ${this.token}` } : {},
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      const body = await res.json();
-      const t1 = Date.now();
-      const serverNow = typeof body.now === 'number' ? body.now : body.serverTime;
-      if (typeof serverNow !== 'number') throw new Error('invalid time response');
-      this.timeOffset = serverNow - Math.round((t0 + t1) / 2);
-      this.timeSynced = true;
-      this.online = true;
-    } catch {
-      this.timeOffset = 0;
-      this.timeSynced = false;
-    }
-    return this.now();
-  }
+  now() { return new Date(); }
 
-  now() { return new Date(Date.now() + this.timeOffset); }
-
-  /** Seconds until the next UTC daily boundary, using synchronized time. */
+  /** Seconds until the next UTC daily boundary. */
   secondsUntilNextDaily() {
     const n = this.now();
     const next = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1);
@@ -531,19 +406,6 @@ export class Platform {
     this.telemetryQueue.push({ event, data, t: Date.now() });
     if (this.telemetryQueue.length > 50) this.telemetryQueue.shift();
   }
-
-  // --- presence -------------------------------------------------------------------
-  // Local-dev only (the repo's own server.js implements this route). The
-  // platform has no per-game presence endpoint reachable by launch tokens.
-
-  startPresence() {
-    this.stopPresence();
-    if (!this.online || this.hosted) return;
-    this._presence = setInterval(() => {
-      fetch('/api/v1/presence', { method: 'POST' }).catch(() => {});
-    }, 30000);
-  }
-  stopPresence() { clearInterval(this._presence); this._presence = null; }
 }
 
 // Pre-graphics-panel saves stored a single quality tier.

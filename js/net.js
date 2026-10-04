@@ -285,24 +285,45 @@ export class RoomsClient {
     return true;
   }
 
-  /** Friends list for invites (lobby may offer these later). */
+  /** Friends ({ userId, username, online }) for the host's invite list. */
   async friends() {
-    try {
-      const res = await this._api('/api/v1/me/friends');
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data) ? data : (data?.friends ?? []);
-    } catch {
-      return [];
-    }
+    const data = await this.platform.friends().catch(() => []);
+    return Array.isArray(data) ? data : (data?.friends ?? []);
+  }
+
+  /** Host: invite a friend into the open room. */
+  async inviteFriend(userId) {
+    if (!this.room) throw new Error('no-room');
+    await this.platform.sh.realtime.invite(this.room, userId);
+  }
+
+  /** Room invites addressed to me ([{ id, fromUserId, fromUsername, roomId }]). */
+  async incomingInvites() {
+    const res = await this._api('/api/v1/realtime/rooms/invites');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data?.items ?? data?.invites ?? []);
+  }
+
+  /** Guest: accept a room invite and take the guest seat. */
+  async acceptInvite(inviteId) {
+    const room = await this.platform.sh.realtime.acceptInvite(inviteId);
+    this.room = room?.roomId ?? room?.id ?? room?.room?.id ?? null;
+    if (!this.room) throw new Error('rooms-unavailable');
+    this.isHost = false;
+    this.seat = 1;
+    await this._connectWs();
+    this.handlers['joined']?.({ room: this.room, seat: 1 });
+  }
+
+  declineInvite(inviteId) {
+    return this._api(`/api/v1/realtime/rooms/invites/${encodeURIComponent(inviteId)}/decline`, { method: 'POST' });
   }
 
   // --- transport ----------------------------------------------------------------
 
-  _wsUrl() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws/v1/realtime?roomId=${encodeURIComponent(this.room)}&access_token=${encodeURIComponent(this.token)}`;
-  }
+  // SDK-built URL: carries the current (renewed) launch token.
+  _wsUrl() { return this.platform.sh.realtime.socketUrl(this.room); }
 
   _connectWs() {
     if (this.ws && this.ws.readyState <= 1) return Promise.resolve();
