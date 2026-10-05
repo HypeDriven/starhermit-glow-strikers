@@ -159,8 +159,9 @@ function aimFor(st) {
   if (puck.y < 18 && speed < 120) {
     return { x: clamp(puck.x + (puck.x < W / 2 ? 11 : -11), 8, 92), y: clamp(puck.y, 8, 30) };
   }
-  // Puck slow and deep in our half: strike through it at the open far corner.
-  if (puck.y < 50 && speed < 55) {
+  // Puck slow and deep in our half — or resting anywhere in it, where nothing
+  // else would ever move it — strike through it at the open far corner.
+  if ((puck.y < 50 && speed < 55) || (puck.y < 100 && speed < 15)) {
     if (me.y < puck.y - 2) {
       const px = puck.x + puck.vx * 0.2, py = puck.y + puck.vy * 0.2;
       let ux = aimX - px, uy = 195 - py;
@@ -191,7 +192,7 @@ async function calibrate(page, vw, vh) {
   };
   const samples = [];
   for (const fy of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.88]) {
-    for (const fx of [0.18, 0.34, 0.5, 0.66, 0.82]) {
+    for (const fx of [0.18, 0.34, 0.42, 0.5, 0.58, 0.66, 0.82]) {
       const hit = await probe(fx * vw, fy * vh);
       if (hit && hit.x >= 0 && hit.x <= 100 && hit.y >= 0 && hit.y <= 100) {
         samples.push({ sx: fx * vw, sy: fy * vh, x: hit.x, y: hit.y });
@@ -239,7 +240,9 @@ async function calibrate(page, vw, vh) {
     maxErr = Math.max(maxErr, Math.hypot(s.sx - p.sx, s.sy - p.sy));
   }
   console.log(`  calibration: ${samples.length} samples, max fit error ${maxErr.toFixed(1)}px`);
-  if (maxErr > 30) throw new Error(`calibration fit too poor: ${maxErr.toFixed(1)}px`);
+  // The affine fit's error grows with the on-screen table size; 30px at 800px tall.
+  const tol = 30 * Math.max(1, vh / 800);
+  if (maxErr > tol) throw new Error(`calibration fit too poor: ${maxErr.toFixed(1)}px`);
   return toScreen;
 }
 
@@ -267,7 +270,8 @@ async function playMatch(page, toScreen, vw, vh, { maxMs = 480000 } = {}) {
       staleNoted = true;
       console.log('  no goals for 45s — opening a lane to break the stalemate');
     }
-    const t = stale ? { x: 34, y: 12 } : aimFor(st);
+    const resting = st.puck.y < 100 && Math.hypot(st.puck.vx, st.puck.vy) < 15;
+    const t = stale && !resting ? { x: 34, y: 12 } : aimFor(st);
     const s = toScreen(t.x, t.y);
     await page.mouse.move(clamp(s.sx, 4, vw - 4), clamp(s.sy, 4, vh - 4));
     const sc = st.scores.join(',');
@@ -415,9 +419,10 @@ async function graphicsSteps(page, step, base, label, VW) {
 }
 
 async function desktopPass(browser, base) {
-  const VW = 1280, VH = 800;
   const { context, page, errors, step } = await newPassPage(
-    browser, 'desktop', { width: VW, height: VH }, false);
+    browser, 'desktop', { width: 1280, height: 800 }, false);
+  // Geometry checks use the page's real viewport (a harness may resize it).
+  const { width: VW, height: VH } = page.viewportSize();
 
   await step('load → title screen', () => gotoTitle(page, base, 'desktop'));
   await graphicsSteps(page, step, base, 'desktop', VW);
@@ -584,9 +589,10 @@ async function desktopPass(browser, base) {
 }
 
 async function mobilePass(browser, base) {
-  const VW = 390, VH = 844;
   const { context, page, errors, step } = await newPassPage(
-    browser, 'mobile', { width: VW, height: VH }, true);
+    browser, 'mobile', { width: 390, height: 844 }, true);
+  // Geometry checks use the page's real viewport (a harness may resize it).
+  const { width: VW, height: VH } = page.viewportSize();
 
   await step('load → title screen', () => gotoTitle(page, base, 'mobile'));
   await graphicsSteps(page, step, base, 'mobile', VW);
