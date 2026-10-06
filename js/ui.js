@@ -93,7 +93,12 @@ export class UI {
     this.screensRoot.append(node);
     this.currentScreen = node;
     const first = node.querySelector('.btn.primary, button, [href], input, select') ?? node;
-    requestAnimationFrame(() => first.focus?.());
+    // preventScroll + reset: a low first button must not scroll the heading
+    // away; every screen opens at its top.
+    requestAnimationFrame(() => {
+      first.focus?.({ preventScroll: true });
+      for (const n of [node, ...node.querySelectorAll('*')]) if (n.scrollTop) n.scrollTop = 0;
+    });
   }
 
   hideScreens() {
