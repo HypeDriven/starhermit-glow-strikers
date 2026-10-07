@@ -201,6 +201,9 @@ export class Platform {
 
   _queueCloudSave() {
     if (!this.hosted) return;
+    // Held during the start-up load: a stale doc queued then would still be
+    // PUT after the remote one is adopted (initHosted replays it if needed).
+    if (this._cloudLoading) { this._cloudHeld = true; return; }
     this._setSync('saving');
     const payload = JSON.stringify(this.save);
     this.sh.saveJSON({ checksum: hashValue(payload), payload });
@@ -260,8 +263,12 @@ export class Platform {
   async initHosted() {
     if (!this.hosted) return false;
     let remote = false;
+    this._cloudLoading = true;
     try { await this.fetchProfile(); } catch { /* nickname falls back to Player id */ }
     try { remote = await this.cloudLoad(); } catch { /* local doc stays authoritative */ }
+    this._cloudLoading = false;
+    // A save held during the load is pushed now, unless the remote doc replaced it.
+    if (this._cloudHeld) { this._cloudHeld = false; if (!remote) this._queueCloudSave(); }
     try { if (this.applyRemoteSettings(await this.sh.getSettings())) remote = true; } catch { /* local prefs */ }
     try { this.keyBindings = await this.sh.loadBindings(DEFAULT_KEYS); } catch { /* defaults */ }
     return remote;
