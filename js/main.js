@@ -187,6 +187,10 @@ function endMatch() {
 
   const nextIdx = app.mode === 'journey' ? app.matchCfg.index + 1 : -1;
   const hasNext = nextIdx >= 0 && nextIdx < JOURNEY.length && won;
+  // Signed in: Daily matches (not draws) and won Challenges post their match
+  // score (your goals × 10 − conceded) to the platform high-score board.
+  const lbScore = (app.mode === 'daily' && !draw) || (app.mode === 'challenge' && won) ? s.scores[0] * 10 - s.scores[1] : null;
+  const postLb = lbScore != null && platform.hosted;
   ui.showResults({
     headline: headlineFor(won, draw),
     sub: app.matchCfg.name ?? '',
@@ -196,7 +200,14 @@ function endMatch() {
     stars,
     next: hasNext ? `Next: ${JOURNEY[nextIdx].name}` : null,
     canRetry: true,
+    leaderboard: postLb ? platformStrings().lbPosting : null,
   });
+  if (postLb) {
+    platform.submitScore(lbScore).then((r) => {
+      const t = platformStrings();
+      ui.setLeaderboardLine(!r.posted ? t.lbNotPosted : r.rank ? t.lbRank.replace('{rank}', r.rank) : t.lbPosted);
+    });
+  }
   platform.track('round_end', { mode: app.mode, won, reason: s.terminalReason });
 }
 

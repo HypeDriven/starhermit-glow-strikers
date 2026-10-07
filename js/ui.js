@@ -382,7 +382,13 @@ export class UI {
 
   // ---------------------------------------------------------------- results
 
-  showResults({ headline, sub, breakdown, names, achievements = [], stars = null, next = null, canRetry = true }) {
+  /** Update the results card's leaderboard line (no-op when it is not shown). */
+  setLeaderboardLine(text) {
+    const line = document.getElementById('results-lb');
+    if (line) line.textContent = text;
+  }
+
+  showResults({ headline, sub, breakdown, names, achievements = [], stars = null, next = null, canRetry = true, leaderboard = null }) {
     const rows = [
       ['Goals', p => p.goals], ['Shots', p => p.shots], ['Saves', p => p.saves],
       ['Steals', p => p.steals], ['Invalid actions', p => p.invalidActions],
@@ -413,6 +419,7 @@ export class UI {
         achievements.length ? el('div', {},
           el('h3', { text: 'Achievements unlocked' }),
           ...achievements.map(a => el('p', { text: `🏆 ${a.name} — ${a.description}` }))) : null,
+        leaderboard ? el('p', { id: 'results-lb', class: 'center dim', 'aria-live': 'polite', text: leaderboard }) : null,
         el('div', { class: 'btn-row' },
           canRetry ? el('button', { class: 'btn primary', onclick: () => this.emit('retry') }, 'Retry') : null,
           next ? el('button', { class: 'btn primary', onclick: () => this.emit('next') }, next) : null,

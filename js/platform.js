@@ -397,6 +397,20 @@ export class Platform {
     return e;
   }
 
+  /** Post a finished match score to the platform leaderboards (score-script.js);
+   *  resolves { posted, rank } — rank on the high-score board, or null. */
+  async submitScore(score) {
+    const sh = this.sh;
+    if (!this.hosted || typeof sh.submitScores !== 'function') return { posted: false, rank: null };
+    const keys = await sh.submitScores({ 'high-score': score }).catch(() => []);
+    if (!keys || !keys.includes('high-score')) return { posted: false, rank: null };
+    try {
+      const r = await sh.leaderboard('high-score', { pageSize: 100 });
+      const me = (r?.items ?? []).find(i => i.userId === sh.userId);
+      return { posted: true, rank: me ? me.rank : null };
+    } catch { return { posted: true, rank: null }; }
+  }
+
   getBoard(board, key) {
     const lb = this.save.leaderboards;
     if (board === 'daily') return lb.daily[key] ?? [];

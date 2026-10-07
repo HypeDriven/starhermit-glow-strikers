@@ -32,10 +32,11 @@ File map (everything the game ships or runs):
 | `js/gfx-strings.js` | Graphics-section strings in nine locales, chosen from `navigator.language` |
 | `js/ui.js` | DOM screens, HUD bindings, captions/announcements, settings, lobby, results |
 | `js/audio.js` | WebAudio buses, clip playback from `sfx/`, synthesized fallbacks, ambience pad, adaptive music |
-| `js/platform.js` | Settings, checksummed save (localStorage, cloud-mirrored when hosted), server time sync, achievements, local leaderboards, StarHermit hosted adapter (launch token, profile nickname, cloud save, read-only platform boards), dev-only presence |
+| `js/platform.js` | Settings, checksummed save (localStorage, cloud-mirrored when hosted), server time sync, achievements, local leaderboards, StarHermit hosted adapter (launch token, profile nickname, cloud save, platform board read + score post), dev-only presence |
 | `js/net.js` | Hosted-play transports (dev-server WebSocket client + host-routed realtime-rooms client; JSON control + binary gameplay frames, reconnect) |
 | `js/main.js` | Boot, app state machine, input, main loop, mode wiring, hosted-play glue, `window.__gs` test hook |
-| `server.js` | Zero-dependency static server + `/api/v1/*` + RFC 6455 WebSocket rooms running the same rules engine |
+| `score-script.js` | StarHermit platform script (`server=`): range-checks a finished match score sent through `StarHermit.submitScores` and posts it to the `high-score` leaderboard (canonical copy in the games repo's `tools/score-script.js`) |
+| `server.js` | Local dev server: zero-dependency static server + `/api/v1/*` + RFC 6455 WebSocket rooms running the same rules engine |
 | `sfx/*.opus`, `sfx/manifest.txt` | 19 authored clips and the canonical event binding table (`manifest.json` feeds the generator, `manifest.md` is its log) |
 | `assets/key-art.webp`, `assets/results-victory.webp`, `assets/results-defeat.webp` | Title key art and results illustrations |
 | `coverart.png`, `icon.png`, `favicon.svg` | Store cover (1200×675), 256 px icon, tab icon |
@@ -215,7 +216,7 @@ The shipped build is **English only**, with two exceptions: the StarHermit accou
 
 ## 12. StarHermit integration
 
-`starhermit.txt` declares `name=Glow Strikers`, `launch=index.html`, `owner=…`, `server=server.js`, `cover`, and one `control.<action>` line per keyboard action. The platform launches `index.html`, which loads the shared client `starhermit-sdk.js` before the game modules; `Platform` calls `StarHermit.init()` when it is constructed at boot.
+`starhermit.txt` declares `name=Glow Strikers`, `launch=index.html`, `owner=…`, `server=score-script.js`, `cover`, and one `control.<action>` line per keyboard action. The platform launches `index.html`, which loads the shared client `starhermit-sdk.js` before the game modules; `Platform` calls `StarHermit.init()` when it is constructed at boot.
 
 Hosted mode activates iff the SDK read a launch token: `#game_token=<jwt>[&session_id=]` (library launch) or `#access_token=<jwt>` (sign-in return), stripped from the URL and held in memory only; `sub` is the user id and `game_scope` the slug (never hard-coded). The SDK sends `Authorization: Bearer` on every same-origin call and renews the token before expiry; when renewal is refused the game toasts that progress keeps saving on this device and continues locally. Every room-socket reconnect first renews the launch token (`StarHermit.renewForReconnect`) and rebuilds the `/ws/v1/realtime` URL from the current token; a transient renewal failure backs off without reopening the old URL. When renewal is refused mid-room, reconnecting stops, the room is dropped and a **Your session expired** dialog offers **Back to StarHermit** (calls `StarHermit.relaunch()` from the click) or **Play on this device** (title). Without a token the game makes no network request (the Daily countdown uses the local clock).
 
@@ -226,12 +227,13 @@ Used when hosted:
 - **Cloud save:** the checksummed save doc mirrors to slot `game:<slug>` (`/api/v1/me/cloud-saves/game:<slug>`): slot info checked at boot, remote wins, an empty slot is seeded from local, nothing is uploaded until that boot load settles (a save made meanwhile is pushed afterwards unless the remote doc replaced it), 2 s debounce + pagehide/hidden flush, sync status on the title line; localStorage stays the offline cache.
 - **Settings KV:** volumes, mute, graphics, reduced motion, high contrast, palette, text scale, left-handed, hold-to-aim, timing assist, haptics and captions are patched (debounced) when changed; platform values win at boot.
 - **Controls:** keydown is routed by `KeyboardEvent.code` through `StarHermit.loadBindings` (`up`, `down`, `left`, `right`, `pause`, `undo`, `camera`, `hint`). Settings → Controls shows the effective keys; press-to-bind saves through `setControl`, **Reset controls** calls `resetControls`. Offline, remaps stay in the local save.
-- **Leaderboard read:** `GET /api/v1/games/{slug}` → `leaderboardId` → entries, nicknames resolved, read-only.
+- **Leaderboard read:** `GET /api/v1/games/{slug}` → `leaderboardId` → entries, nicknames resolved.
+- **Leaderboard post:** when signed in, every finished Daily Challenge match (not a draw) and every won Challenge posts its match score (your goals × 10 − goals conceded) through `StarHermit.submitScores({ 'high-score': score })`; `score-script.js` posts it to the `high-score` board ("Match score", integer, higher is better, −99…99). The results card shows "Posting score to the leaderboard…", then "Leaderboard rank: #N" (or "Score posted to the leaderboard." / "Score not posted to the leaderboard."), localized in the nine locales (`js/platform-strings.js`). Quick Match, Practice, Journey, Learn and Hosted Play post nothing; standalone posts nothing and shows no line.
 - **Realtime rooms (Hosted Play):** REST lobby (`POST /api/v1/realtime/rooms` + `/open`, `quick-join`, `leave`, `mine`, `result`); a room host sees their friends (online state) and invites them (`POST /rooms/{id}/invites`); the lobby lists room invites addressed to the player with Accept (takes the guest seat) / Decline. Transport is `/ws/v1/realtime` (URL from the SDK) with the platform's 16-byte sender prefix stripped from binary frames (8 KB cap). The host player's browser runs the same authoritative rules engine as `server.js` and broadcasts 32-byte snapshots; guests send 13-byte input frames (≤30 msg/s). Local dev play (`node server.js`) still uses its own RFC 6455 `/ws` protocol with room codes.
 
 Account-surface strings (sign-in, invites, toasts, reset, sign-out notice, session-expired dialog) are localized in nine locales (`js/platform-strings.js`).
 
-Not used: score submission and server-side achievements (`server.js` is a Node host, not a Jint game script, so there is no script-owned scoring; personal bests and achievements stay local + cloud-mirrored), platform sessions / matchmaking queues / session chat (rooms quick-join and host-relayed lobby chat instead), moderation, presence and server time. Telemetry is consent-gated and only ever queued in memory (max 50 events); nothing is uploaded.
+Not used: server-side achievements (`score-script.js` reports only scores; personal bests and achievements stay local + cloud-mirrored), platform sessions other than the short practice session that posts a score / matchmaking queues / session chat (rooms quick-join and host-relayed lobby chat instead), moderation, presence and server time. Telemetry is consent-gated and only ever queued in memory (max 50 events); nothing is uploaded.
 
 ## 13. Technical architecture
 
@@ -268,7 +270,7 @@ QA bar as checkable statements: every title button reaches its screen and back; 
 ## 16. Known limitations
 
 - English-only UI; no locale switch (section 10).
-- Leaderboards: platform boards are read-only for clients (shown when hosted with a `leaderboardId`); personal bests are local and cloud-mirrored, not globally submitted. Achievements are local, also part of the cloud-saved doc.
+- Leaderboards: only Daily and won Challenge match scores reach the platform board; other personal bests are local and cloud-mirrored, not globally submitted. Achievements are local, also part of the cloud-saved doc.
 - The **Left-handed layout** toggle is stored but changes nothing on screen; the **Voice** slider controls an empty bus.
 - Theme is chosen by content only (Journey band, challenge, daily); the `cosmetics.theme` save field is fixed at Neon Dusk with no picker.
 - Only budget rejections count as invalid actions; malformed or out-of-phase commands are rejected silently.
