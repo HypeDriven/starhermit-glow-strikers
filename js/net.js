@@ -232,6 +232,7 @@ export class RoomsClient {
     this._guestSender = null;     // participant id prefix of the current guest
     this._guestName = 'Opponent';
     this.hostSim = null;          // host-side authoritative simulation
+    this.renewing = false;        // true while renewing the token before a reconnect
   }
 
   get token() { return this.platform.token; }
@@ -352,7 +353,15 @@ export class RoomsClient {
     if (this._reconnects >= 5) return this.handlers['disconnected']?.();
     const delay = Math.min(8000, 500 * 2 ** this._reconnects++);
     this.handlers['reconnecting']?.({ attempt: this._reconnects, delay });
-    setTimeout(() => {
+    setTimeout(async () => {
+      // A failed reconnect may be an expired launch token (refused before the
+      // upgrade, seen only as 1006): renew first, then rebuild the URL from
+      // the current token. 'retry' backs off without reopening the old URL;
+      // 'relaunch' means the token is dead — stop for good.
+      const renewal = await this._renewForReconnect();
+      if (!this.room) return;
+      if (renewal === 'relaunch') return this._authLost();
+      if (renewal !== 'renewed') return this._scheduleReconnect();
       this._api('/api/v1/realtime/rooms/mine')
         .then(async (res) => {
           if (!res.ok) throw new Error(String(res.status));
@@ -367,6 +376,25 @@ export class RoomsClient {
         })
         .catch(() => this._scheduleReconnect());
     }, delay);
+  }
+
+  async _renewForReconnect() {
+    const sh = this.platform.sh;
+    if (!sh?.renewForReconnect) return 'renewed';
+    this.renewing = true;
+    try { return await sh.renewForReconnect(); } catch { return 'retry'; } finally { this.renewing = false; }
+  }
+
+  /** Renewal refused: drop the room locally (REST would 401) and surface relaunch. */
+  _authLost() {
+    this.hostSim = null;
+    this.snap = this.prevSnap = null;
+    this.room = null;
+    this.seat = -1;
+    this.isHost = false;
+    try { this.ws?.close(); } catch { /* already closed */ }
+    this.ws = null;
+    this.handlers['auth-lost']?.();
   }
 
   _sendControl(obj) {

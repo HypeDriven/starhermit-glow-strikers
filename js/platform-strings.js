@@ -11,6 +11,8 @@ const EN = {
   online: 'online', offline: 'offline', noFriends: 'No friends to invite yet.',
   roomInvites: 'Room invites', inviteFrom: '{name} invited you', accept: 'Accept', decline: 'Decline',
   resetKeys: 'Reset controls',
+  sessionExpired: 'Your session expired', sessionExpiredBody: 'Your StarHermit session ended, so the room connection stopped. Go back to StarHermit to start a fresh session.',
+  relaunch: 'Back to StarHermit', playLocal: 'Play on this device',
 };
 
 const STRINGS = {
@@ -24,6 +26,8 @@ const STRINGS = {
     online: 'en línea', offline: 'desconectado', noFriends: 'Aún no tienes amigos para invitar.',
     roomInvites: 'Invitaciones a salas', inviteFrom: '{name} te invitó', accept: 'Aceptar', decline: 'Rechazar',
     resetKeys: 'Restablecer controles',
+    sessionExpired: 'Tu sesión expiró', sessionExpiredBody: 'Tu sesión de StarHermit terminó y se detuvo la conexión con la sala. Vuelve a StarHermit para iniciar una nueva sesión.',
+    relaunch: 'Volver a StarHermit', playLocal: 'Jugar en este dispositivo',
   },
   'es-ES': {
     signIn: 'Iniciar sesión con StarHermit', invite: 'Invitar a un amigo',
@@ -33,6 +37,8 @@ const STRINGS = {
     online: 'conectado', offline: 'desconectado', noFriends: 'Todavía no tienes amigos a los que invitar.',
     roomInvites: 'Invitaciones a salas', inviteFrom: '{name} te ha invitado', accept: 'Aceptar', decline: 'Rechazar',
     resetKeys: 'Restablecer controles',
+    sessionExpired: 'Tu sesión ha caducado', sessionExpiredBody: 'Tu sesión de StarHermit ha terminado y se ha detenido la conexión con la sala. Vuelve a StarHermit para iniciar una nueva sesión.',
+    relaunch: 'Volver a StarHermit', playLocal: 'Jugar en este dispositivo',
   },
   'de-DE': {
     signIn: 'Mit StarHermit anmelden', invite: 'Freund einladen',
@@ -42,6 +48,8 @@ const STRINGS = {
     online: 'online', offline: 'offline', noFriends: 'Noch keine Freunde zum Einladen.',
     roomInvites: 'Raumeinladungen', inviteFrom: '{name} hat dich eingeladen', accept: 'Annehmen', decline: 'Ablehnen',
     resetKeys: 'Steuerung zurücksetzen',
+    sessionExpired: 'Deine Sitzung ist abgelaufen', sessionExpiredBody: 'Deine StarHermit-Sitzung ist beendet, daher wurde die Raumverbindung getrennt. Kehre zu StarHermit zurück, um eine neue Sitzung zu starten.',
+    relaunch: 'Zurück zu StarHermit', playLocal: 'Auf diesem Gerät spielen',
   },
   'fr-FR': {
     signIn: 'Se connecter avec StarHermit', invite: 'Inviter un ami',
@@ -51,6 +59,8 @@ const STRINGS = {
     online: 'en ligne', offline: 'hors ligne', noFriends: 'Aucun ami à inviter pour l’instant.',
     roomInvites: 'Invitations aux salons', inviteFrom: '{name} t’a invité', accept: 'Accepter', decline: 'Refuser',
     resetKeys: 'Réinitialiser les commandes',
+    sessionExpired: 'Ta session a expiré', sessionExpiredBody: 'Ta session StarHermit est terminée, la connexion au salon a donc été interrompue. Retourne sur StarHermit pour démarrer une nouvelle session.',
+    relaunch: 'Retour à StarHermit', playLocal: 'Jouer sur cet appareil',
   },
   'fr-CA': {
     signIn: 'Se connecter avec StarHermit', invite: 'Inviter un ami',
@@ -60,6 +70,8 @@ const STRINGS = {
     online: 'en ligne', offline: 'hors ligne', noFriends: 'Aucun ami à inviter pour l’instant.',
     roomInvites: 'Invitations aux salles', inviteFrom: '{name} t’a invité', accept: 'Accepter', decline: 'Refuser',
     resetKeys: 'Réinitialiser les commandes',
+    sessionExpired: 'Ta session a expiré', sessionExpiredBody: 'Ta session StarHermit est terminée, la connexion à la salle a donc été interrompue. Retourne sur StarHermit pour démarrer une nouvelle session.',
+    relaunch: 'Retour à StarHermit', playLocal: 'Jouer sur cet appareil',
   },
   'pt-BR': {
     signIn: 'Entrar com StarHermit', invite: 'Convidar um amigo',
@@ -69,6 +81,8 @@ const STRINGS = {
     online: 'online', offline: 'offline', noFriends: 'Nenhum amigo para convidar ainda.',
     roomInvites: 'Convites de sala', inviteFrom: '{name} convidou você', accept: 'Aceitar', decline: 'Recusar',
     resetKeys: 'Redefinir controles',
+    sessionExpired: 'Sua sessão expirou', sessionExpiredBody: 'Sua sessão do StarHermit terminou e a conexão com a sala foi interrompida. Volte ao StarHermit para iniciar uma nova sessão.',
+    relaunch: 'Voltar ao StarHermit', playLocal: 'Jogar neste dispositivo',
   },
   'it-IT': {
     signIn: 'Accedi con StarHermit', invite: 'Invita un amico',
@@ -78,6 +92,8 @@ const STRINGS = {
     online: 'online', offline: 'offline', noFriends: 'Ancora nessun amico da invitare.',
     roomInvites: 'Inviti alle stanze', inviteFrom: '{name} ti ha invitato', accept: 'Accetta', decline: 'Rifiuta',
     resetKeys: 'Ripristina comandi',
+    sessionExpired: 'La tua sessione è scaduta', sessionExpiredBody: 'La tua sessione StarHermit è terminata, quindi la connessione alla stanza si è interrotta. Torna su StarHermit per avviare una nuova sessione.',
+    relaunch: 'Torna a StarHermit', playLocal: 'Gioca su questo dispositivo',
   },
 };
 

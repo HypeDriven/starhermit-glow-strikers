@@ -31,6 +31,8 @@ platform.load();
 platform.onSync = () => ui?.setAccountLine(platform.accountLine());
 // Renewal refused: local play continues; the title re-offers sign-in.
 platform.onSignedOut = () => {
+  // A refused renewal before a room reconnect shows the expired dialog instead.
+  if (net?.renewing) return;
   ui?.toast(platformStrings().signedOut);
   if (app.screen === 'title') goTitle();
 };
@@ -1093,6 +1095,15 @@ net.on('error', (m) => {
 net.on('disconnected', () => {
   ui.toast('Connection to the room was lost.');
   if (app.mode === 'hosted' || app.screen === 'lobby') { net.leave(); goTitle(); }
+});
+// Launch token dead mid-room: stop and offer a fresh launch from StarHermit.
+net.on('auth-lost', () => {
+  lobby.roomCode = null; lobby.joined = false; lobby.players = []; lobby.friends = null;
+  goTitle();
+  ui.showSessionExpired();
+});
+ui.on('relaunch', () => {
+  if (!platform.sh?.relaunch()) ui.toast(platformStrings().signedOut);
 });
 net.on('reconnecting', (m) => ui.toast(`Reconnecting (attempt ${m.attempt})…`));
 net.on('resumed', () => {

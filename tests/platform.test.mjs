@@ -296,6 +296,77 @@ test('quick-join 404 surfaces an honest no-open-tables state, no socket', async 
 });
 
 // ---------------------------------------------------------------------------
+// RoomsClient — reconnect renews the launch token first
+// ---------------------------------------------------------------------------
+
+const TOK2 = jwt({ sub: 'user-12345678-abcd', game_scope: 'glow-strikers', exp: Math.floor(Date.now() / 1000) + 7200 });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function connectedHost(renewHandler) {
+  const p = hostedPlatform();
+  freshSocketMock();
+  const calls = mockFetch([
+    ['/api/v1/realtime/rooms', () => jsonRes({ id: 'room-1' })],
+    ['/api/v1/realtime/rooms/room-1/open', () => jsonRes({}, 204)],
+    ['/api/v1/realtime/rooms/mine', () => jsonRes({ roomId: 'room-1' })],
+    [/\/launch-token$/, renewHandler],
+  ]);
+  const c = new RoomsClient(p);
+  await c.createRoom();
+  return { p, c, calls, first: MockWebSocket.last };
+}
+
+test('reconnect renews the token first and reopens with the new token', async () => {
+  const { c, calls, first } = await connectedHost(() => jsonRes({ token: TOK2 }));
+  first.close();
+  await wait(700);
+  const renewAt = calls.findIndex(x => /launch-token$/.test(x.url));
+  const mineAt = calls.findIndex(x => x.url === '/api/v1/realtime/rooms/mine');
+  assert.ok(renewAt >= 0 && mineAt > renewAt, 'renewal precedes the room lookup');
+  assert.notEqual(MockWebSocket.last, first);
+  assert.ok(MockWebSocket.last.url.includes(`access_token=${encodeURIComponent(TOK2)}`));
+  assert.ok(!MockWebSocket.last.url.includes(encodeURIComponent(TOK)));
+  c.leave();
+});
+
+test("renewal 'retry' backs off without reopening the old URL", async () => {
+  const { c, calls, first } = await connectedHost(() => jsonRes({}, 503));
+  let attempts = 0;
+  c.on('reconnecting', () => { attempts++; });
+  first.close();
+  await wait(700);
+  assert.equal(MockWebSocket.last, first, 'no socket reopened');
+  assert.ok(!calls.some(x => x.url === '/api/v1/realtime/rooms/mine'));
+  assert.equal(attempts, 2, 'scheduled another backoff attempt');
+  assert.equal(c.room, 'room-1');
+  c.leave();
+});
+
+test("renewal 'relaunch' stops reconnecting and surfaces auth-lost", async () => {
+  const { p, c, first } = await connectedHost(() => jsonRes({}, 401));
+  let lost = 0;
+  c.on('auth-lost', () => { lost++; });
+  first.close();
+  await wait(700);
+  assert.equal(lost, 1);
+  assert.equal(c.room, null);
+  assert.equal(p.hosted, false, 'SDK signed out');
+  assert.equal(MockWebSocket.last, first, 'no socket reopened');
+  assert.equal(typeof p.sh.relaunch, 'function');
+  await wait(1200);
+  assert.equal(MockWebSocket.last, first, 'stays stopped');
+});
+
+test('session-expired strings exist in every locale', async () => {
+  const { platformStrings, PLATFORM_LOCALES } = await import('../js/platform-strings.js');
+  for (const loc of PLATFORM_LOCALES) {
+    const t = platformStrings(loc);
+    for (const k of ['sessionExpired', 'sessionExpiredBody', 'relaunch', 'playLocal']) assert.ok(t[k], `${loc}.${k}`);
+  }
+  assert.notEqual(platformStrings('de-DE').relaunch, platformStrings('en-US').relaunch);
+});
+
+// ---------------------------------------------------------------------------
 // RoomsClient — binary frames
 // ---------------------------------------------------------------------------
 

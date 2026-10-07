@@ -363,6 +363,23 @@ export class UI {
       )));
   }
 
+  // ---------------------------------------------------------------- session expired
+
+  /** Launch token could not be renewed: offer a fresh launch (needs this click). */
+  showSessionExpired() {
+    const t = platformStrings();
+    this.show('session-expired', () => el('section', { role: 'alertdialog', 'aria-modal': 'true', 'aria-label': t.sessionExpired, id: 'session-expired' },
+      el('div', { class: 'panel' },
+        el('h2', { text: t.sessionExpired }),
+        el('p', { class: 'dim', text: t.sessionExpiredBody }),
+        el('div', { class: 'menu' },
+          el('button', { class: 'btn primary', id: 'btn-relaunch', onclick: () => this.emit('relaunch') }, t.relaunch),
+          el('button', { class: 'btn', onclick: () => this.emit('back') }, t.playLocal),
+        ),
+      )));
+    this.announce(t.sessionExpired, true);
+  }
+
   // ---------------------------------------------------------------- results
 
   showResults({ headline, sub, breakdown, names, achievements = [], stars = null, next = null, canRetry = true }) {
