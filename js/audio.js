@@ -53,7 +53,7 @@ export class AudioEngine {
     for (const name of ['music', 'effects', 'ambience', 'voice']) {
       const g = this.ctx.createGain();
       g.connect(master);
-      this.buses[name] = g;
+      this.buses[name] = (globalThis.GameOptions ? globalThis.GameOptions.tagBus(g, name) : g);
     }
     this.applyVolumes();
     this._startAmbience();
@@ -79,7 +79,7 @@ export class AudioEngine {
 
   _osc(type, freq, t0, dur, bus, peak = 0.5, freqEnd = null) {
     const c = this.ctx;
-    const o = c.createOscillator();
+    const o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(c.createOscillator(), bus) : c.createOscillator());
     const g = c.createGain();
     o.type = type;
     o.frequency.setValueAtTime(freq, t0);
@@ -96,7 +96,7 @@ export class AudioEngine {
     const buf = c.createBuffer(1, len, c.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = (this.rng.float() * 2 - 1) * (1 - i / len);
-    const src = c.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(c.createBufferSource(), bus) : c.createBufferSource());
     src.buffer = buf;
     const f = c.createBiquadFilter();
     f.type = 'bandpass'; f.frequency.value = filterFreq; f.Q.value = q;
@@ -143,7 +143,7 @@ export class AudioEngine {
   /** Play a cached clip through the effects bus. False while loading/failed. */
   _playSample(name) {
     if (this._loadSample(name).status !== 'ready') return false;
-    const src = this.ctx.createBufferSource();
+    const src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(this.ctx.createBufferSource(), name) : this.ctx.createBufferSource());
     src.buffer = this.samples.get(name).buffer;
     src.connect(this.buses.effects);
     src.start();
@@ -196,10 +196,10 @@ export class AudioEngine {
 
   _startAmbience() {
     const c = this.ctx;
-    const o1 = c.createOscillator(); o1.type = 'sine'; o1.frequency.value = 55;
-    const o2 = c.createOscillator(); o2.type = 'sine'; o2.frequency.value = 82.5;
+    const o1 = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(c.createOscillator(), null) : c.createOscillator()); o1.type = 'sine'; o1.frequency.value = 55;
+    const o2 = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(c.createOscillator(), null) : c.createOscillator()); o2.type = 'sine'; o2.frequency.value = 82.5;
     const g = c.createGain(); g.gain.value = 0.05;
-    const lfo = c.createOscillator(); lfo.frequency.value = 0.07;
+    const lfo = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(c.createOscillator(), null) : c.createOscillator()); lfo.frequency.value = 0.07;
     const lfoG = c.createGain(); lfoG.gain.value = 0.02;
     lfo.connect(lfoG).connect(g.gain);
     o1.connect(g); o2.connect(g);

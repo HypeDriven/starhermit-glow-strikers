@@ -733,8 +733,8 @@ export class Renderer {
       this.postKey = key;
       this._buildPost(this.size[0], this.size[1]);
     }
-    if (this.composer) this.composer.render(dt);
-    else this.renderer.render(this.scene, this.camera);
+    if (this.composer) (globalThis.GameOptions ? globalThis.GameOptions.draw(this.composer.renderer, () => this.composer.render(dt)) : this.composer.render(dt));
+    else (globalThis.GameOptions ? globalThis.GameOptions.draw(this.renderer, () => this.renderer.render(this.scene, this.camera)) : this.renderer.render(this.scene, this.camera));
   }
 
   _pushTrail(x, y, z) {
