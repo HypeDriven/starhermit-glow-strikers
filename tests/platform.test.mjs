@@ -79,12 +79,19 @@ function makePlatform() {
 }
 
 // In-memory cloud slot keyed by the decoded path segment.
-function cloudRoutes(store) {
+function cloudRoutes(store, etags = {}) {
   return [
-    [/\/cloud-saves\/[^/]+\/info$/, (url) => jsonRes({ exists: !!store[decodeURIComponent(url.split('/cloud-saves/')[1].slice(0, -5))] })],
+    [/\/cloud-saves\/[^/]+\/info$/, (url) => { const k = decodeURIComponent(url.split('/cloud-saves/')[1].slice(0, -5)); return jsonRes({ exists: !!store[k], etag: etags[k] || null }); }],
     [/\/cloud-saves\/[^/]+$/, (url, opts) => {
       const key = decodeURIComponent(url.split('/cloud-saves/')[1]);
-      if (opts.method === 'PUT') { store[key] = Buffer.from(JSON.parse(opts.body).dataBase64, 'base64'); return jsonRes({}); }
+      if (opts.method === 'PUT') {
+        // Conditional writes as the platform does them; a lost race answers 412.
+        const h = opts.headers || {};
+        if ((h['If-Match'] && h['If-Match'] !== etags[key]) || (h['If-None-Match'] === '*' && store[key])) return jsonRes({ error: 'precondition_failed' }, 412);
+        store[key] = Buffer.from(JSON.parse(opts.body).dataBase64, 'base64');
+        etags[key] = '"v' + Date.now() + Math.random() + '"';
+        return jsonRes({ etag: etags[key] });
+      }
       return store[key] ? { ok: true, status: 200, arrayBuffer: async () => store[key].buffer.slice(store[key].byteOffset, store[key].byteOffset + store[key].byteLength) } : jsonRes(null, 404);
     }],
   ];
@@ -127,7 +134,8 @@ test('offline: no token, no hosted mode, no display name, no requests', async ()
 });
 
 test('sign-in is offered on the platform host without a token', () => {
-  mockLocation({ hash: '', search: '' });
+  // Sign-in is offered only on the game's own UUID host.
+  mockLocation({ hash: '', search: '', host: '0b9d6f2e-3c4a-4e5b-9a7c-1d2e3f405162.starhermit.com' });
   const calls = mockFetch([]);
   const p = makePlatform();
   assert.equal(p.canSignIn, true);
@@ -147,7 +155,7 @@ test('profileFor uses the nickname with a Player-id fallback', async () => {
   assert.equal(await p.profileFor('other-999'), 'Player other-');
 });
 
-test('cloud save round-trips through the game:<slug> slot; remote wins on load', async () => {
+test('cloud save round-trips through the game:<slug> slot; the remote doc is merged on load', async () => {
   mockLocation({ hash: `#game_token=${TOK}` });
   mockLocalStorage();
   const store = {};
@@ -164,7 +172,7 @@ test('cloud save round-trips through the game:<slug> slot; remote wins on load',
   const q = makePlatform();
   q.save.progression.wins = 1;
   assert.equal(await q.cloudLoad(), true);
-  assert.equal(q.save.progression.wins, 7, 'remote doc wins');
+  assert.equal(q.save.progression.wins, 7, 'the better remote count is kept');
   const local = JSON.parse(localStorage.getItem('glow-strikers.save.v1'));
   assert.equal(local.checksum, hashValue(local.payload), 'local cache rewritten with a valid checksum');
 });
@@ -190,8 +198,10 @@ test('settings KV: platform values applied at boot, changes patched', async () =
   assert.equal(patch.url, '/api/v1/games/glow-strikers/settings');
   assert.equal(JSON.parse(patch.opts.body).settings.volumeEffects, 0.3);
   p.setKey('camera', 'KeyV');
+  // The SDK reads the current bindings and writes the full set back.
+  for (let i = 0; i < 20 && !calls.some(c => c.opts.method === 'PUT' && c.url.endsWith('/controls')); i++) await new Promise(r => setTimeout(r, 5));
   const put = calls.find(c => c.opts.method === 'PUT' && c.url.endsWith('/controls'));
-  assert.deepEqual(JSON.parse(put.opts.body), { bindings: { camera: ['KeyV'] } });
+  assert.deepEqual(JSON.parse(put.opts.body), { bindings: { undo: ['KeyU'], camera: ['KeyV'] } });
   assert.deepEqual(p.keyMap().camera, ['KeyV']);
 });
 
@@ -357,11 +367,45 @@ test("renewal 'relaunch' stops reconnecting and surfaces auth-lost", async () =>
   assert.equal(MockWebSocket.last, first, 'stays stopped');
 });
 
+test("renewal 'terms-required' stops like auth loss with the terms reason", async () => {
+  const { c, first } = await connectedHost(() => jsonRes({ error: 'terms_acceptance_required' }, 403));
+  const seen = [];
+  c.on('auth-lost', (m) => seen.push(m?.reason));
+  first.close();
+  await wait(700);
+  assert.deepEqual(seen, ['terms-required']);
+  assert.equal(c.room, null);
+  assert.equal(MockWebSocket.last, first, 'no socket reopened');
+});
+
+test('a room that is gone ends the reconnect loop with unavailable', async () => {
+  const p = hostedPlatform();
+  freshSocketMock();
+  mockFetch([
+    ['/api/v1/realtime/rooms', () => jsonRes({ id: 'room-1' })],
+    ['/api/v1/realtime/rooms/room-1/open', () => jsonRes({}, 204)],
+    ['/api/v1/realtime/rooms/mine', () => jsonRes(null, 404)],
+    [/\/launch-token$/, () => jsonRes({ token: TOK2 })],
+  ]);
+  const c = new RoomsClient(p);
+  await c.createRoom();
+  const first = MockWebSocket.last;
+  let gone = 0, attempts = 0;
+  c.on('unavailable', () => { gone++; });
+  c.on('reconnecting', () => { attempts++; });
+  first.close();
+  await wait(900);
+  assert.equal(gone, 1);
+  assert.equal(attempts, 1, 'no further attempts');
+  assert.equal(c.room, null);
+  assert.equal(MockWebSocket.last, first);
+});
+
 test('session-expired strings exist in every locale', async () => {
   const { platformStrings, PLATFORM_LOCALES } = await import('../js/platform-strings.js');
   for (const loc of PLATFORM_LOCALES) {
     const t = platformStrings(loc);
-    for (const k of ['sessionExpired', 'sessionExpiredBody', 'relaunch', 'playLocal']) assert.ok(t[k], `${loc}.${k}`);
+    for (const k of ['sessionExpired', 'sessionExpiredBody', 'relaunch', 'playLocal', 'termsRequired', 'termsRequiredBody', 'roomUnavailable']) assert.ok(t[k], `${loc}.${k}`);
   }
   assert.notEqual(platformStrings('de-DE').relaunch, platformStrings('en-US').relaunch);
 });
@@ -494,4 +538,31 @@ test('legacy quality tier migrates to a graphics preset; graphics round-trips', 
   p = new Platform();
   p.load();
   assert.equal(p.settings.graphics.preset, 'auto');
+});
+
+test('save conflict: a write that lost to another device reloads, merges and saves again', async () => {
+  mockLocation({ hash: `#game_token=${TOK}` });
+  mockLocalStorage();
+  const store = {}, etags = {};
+  mockFetch(cloudRoutes(store, etags));
+  const p = makePlatform();
+  assert.equal(await p.cloudLoad(), false, 'empty slot');
+  await p.flushCloud();
+  // Another device saves first.
+  const q = makePlatform();
+  await q.cloudLoad();
+  q.save.progression.wins = 9; q.save.progression.journeyCompleted = ['j01', 'j02'];
+  q.persist();
+  assert.equal(await q.flushCloud(), true);
+  // This device's stale write is refused, then merged and saved again.
+  let merged = 0; p.onMerged = () => { merged++; };
+  p.save.progression.wins = 4; p.save.progression.journeyCompleted = ['j03'];
+  p.persist();
+  assert.equal(await p.flushCloud(), false, 'conditional write refused');
+  for (let i = 0; i < 50 && !merged; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(merged, 1);
+  assert.equal(p.save.progression.wins, 9);
+  assert.deepEqual([...p.save.progression.journeyCompleted].sort(), ['j01', 'j02', 'j03']);
+  assert.equal(await p.flushCloud(), true, 'the merge is saved again');
+  assert.equal(p.sh.saveConflicted(), false);
 });

@@ -11,6 +11,10 @@ import { AudioEngine } from './audio.js';
 import { Platform } from './platform.js?v=production-qa-1';
 import { HostedClient, RoomsClient } from './net.js?v=production-qa-1';
 import { platformStrings } from './platform-strings.js';
+import { T, N } from './i18n/t.js';
+
+// Journey mechanic tags (shown in stage setup).
+const MECHANICS = { strike: N('strike'), defend: N('defend'), obstacles: N('obstacles'), 'time-pressure': N('time pressure'), 'move-budget': N('move budget'), combined: N('combined') };
 import {
   JOURNEY, LESSONS, dailyConfig, dailyKey, validateContent,
   CONTENT_VERSION, RULESET_ID,
@@ -26,7 +30,7 @@ const platform = new Platform();
 platform.load();
 
 // Hosted handshake (async): profile nickname first, then the remote save doc
-// (remote wins on conflict). The launch token itself was read + stripped in
+// (merged with the local one, see Platform.cloudLoad). The launch token itself was read + stripped in
 // the Platform constructor; it is never persisted.
 platform.onSync = () => ui?.setAccountLine(platform.accountLine());
 // Renewal refused: local play continues; the title re-offers sign-in.
@@ -143,23 +147,32 @@ function startMatch(contentCfg, mode, meta = {}) {
   ui.showHud(true);
   ui.setScores(0, 0);
   ui.setUndoVisible(mode === 'practice' || mode === 'learn');
-  ui.setBudget(app.session.state.moveBudget ? `Budget ${Math.round(app.session.state.moveBudget[0])} u` : null);
+  ui.setBudget(app.session.state.moveBudget ? T('Budget {n} u', { n: Math.round(app.session.state.moveBudget[0]) }) : null);
   setObjective();
-  ui.banner(mode === 'learn' ? app.lesson.title : contentCfg.name ?? 'Match', false);
+  ui.banner(mode === 'learn' ? T(app.lesson.title) : cfgName(contentCfg), false);
   audio.ensure();
   audio.startMusic();
   platform.track('start', { mode, content: contentCfg.id });
   app.screen = 'playing';
 }
 
+/** Localized display name of a match config (content names stay English keys). */
+function cfgName(c) {
+  if (!c) return T('Match');
+  if (c.id === 'practice') return T('Practice — {name}', { name: T(c.difficulty ?? 'Club') });
+  if (String(c.id).startsWith('daily-')) return T('Daily — {day}', { day: String(c.id).slice(6) });
+  if (String(c.id).startsWith('hosted-')) return T('Hosted · Room {room}', { room: String(c.id).slice(7) });
+  return T(c.name ?? 'Match');
+}
+
 function setObjective() {
   const s = app.session?.state;
   if (!s) return;
-  if (app.mode === 'learn') { ui.setObjective(app.lesson.text); return; }
-  const parts = [`First to ${s.targetScore}`];
-  if (s.timeLimitTicks) parts.push(`beat the clock`);
-  if (app.matchCfg?.shutout) parts.push('concede nothing');
-  if (s.moveBudget) parts.push('limited travel budget');
+  if (app.mode === 'learn') { ui.setObjective(T(app.lesson.text)); return; }
+  const parts = [T('First to {n}', { n: s.targetScore })];
+  if (s.timeLimitTicks) parts.push(T('beat the clock'));
+  if (app.matchCfg?.shutout) parts.push(T('concede nothing'));
+  if (s.moveBudget) parts.push(T('limited travel budget'));
   ui.setObjective(parts.join(' · '));
 }
 
@@ -182,7 +195,7 @@ function endMatch() {
   const stars = app.mode === 'journey' && won ? computeStars(app.matchCfg, breakdown) : null;
 
   audio.event(won ? 'win' : draw ? 'draw' : 'lose');
-  ui.announce(`${headlineFor(won, draw)}. Final score ${s.scores[0]} to ${s.scores[1]}.`, true);
+  ui.announce(T('{headline}. Final score {a} to {b}.', { headline: T(headlineFor(won, draw)), a: s.scores[0], b: s.scores[1] }), true);
   platform.persist();
 
   const nextIdx = app.mode === 'journey' ? app.matchCfg.index + 1 : -1;
@@ -193,14 +206,14 @@ function endMatch() {
   const postLb = lbScore != null && platform.hosted;
   ui.showResults({
     headline: headlineFor(won, draw),
-    sub: app.matchCfg.name ?? '',
+    sub: ((cfg) => () => cfgName(cfg))(app.matchCfg),
     breakdown,
-    names: [platform.displayName ?? 'You', app.matchCfg.ai ? 'AI' : 'Opponent'],
+    names: [platform.displayName ?? T('You'), app.matchCfg.ai ? T('AI') : T('Opponent')],
     achievements,
     stars,
-    next: hasNext ? `Next: ${JOURNEY[nextIdx].name}` : null,
+    next: hasNext ? () => T('Next: {name}', { name: T(JOURNEY[nextIdx].name) }) : null,
     canRetry: true,
-    leaderboard: postLb ? platformStrings().lbPosting : null,
+    leaderboard: postLb ? () => platformStrings().lbPosting : null,
   });
   if (postLb) {
     platform.submitScore(lbScore).then((r) => {
@@ -309,7 +322,7 @@ function updateLesson(evts) {
       ls.survived = s.activeTicks;
       done = ls.survived >= L.goal.ticks;
       failed = evts.some(e => e.type === 'goal' && e.scorer === 1);
-      ui.setObjective(`${L.text} (${Math.max(0, Math.ceil((L.goal.ticks - ls.survived) / 60))}s left)`);
+      ui.setObjective(T('{text} ({n}s left)', { text: T(L.text), n: Math.max(0, Math.ceil((L.goal.ticks - ls.survived) / 60)) }));
       break;
     case 'goal': done = evts.some(e => e.type === 'goal' && e.scorer === 0); break;
     case 'wall-then-cross': {
@@ -322,7 +335,7 @@ function updateLesson(evts) {
 
   if (failed) {
     ls.done = true;
-    ui.banner('Try again', true);
+    ui.banner(T('Try again'), true);
     // Bail out if the player left or restarted the lesson during the delay.
     const token = app.session;
     setTimeout(() => {
@@ -348,10 +361,10 @@ function completeLesson(lesson) {
   if (LESSONS.every(l => p.lessonsDone.includes(l.id))) {
     platform.settings.tutorialDone = true;
     const a = platform.unlock('quick_learner');
-    if (a) ui.toast(`Achievement: ${a.name}`);
+    if (a) ui.toast(T('Achievement: {name}', { name: T(a.name) }));
   }
   if (lesson.goal.kind !== 'match') {
-    ui.banner('Lesson complete!', true);
+    ui.banner(T('Lesson complete!'), true);
     audio.event('win');
     const token = app.session;
     setTimeout(() => {
@@ -360,10 +373,10 @@ function completeLesson(lesson) {
       const next = LESSONS[idx + 1];
       ui.showResults({
         headline: 'Lesson complete',
-        sub: lesson.title,
+        sub: () => T(lesson.title),
         breakdown: rules.resultBreakdown(app.session.state),
-        names: ['You', '—'],
-        next: next ? `Next: ${next.title}` : null,
+        names: [T('You'), '—'],
+        next: next ? () => T('Next: {name}', { name: T(next.title) }) : null,
       });
       app.screen = 'results';
     }, 900);
@@ -519,8 +532,10 @@ function giveHint() {
 
 function showPauseOverlay() {
   const hosted = app.mode === 'hosted';
+  const cfg = app.matchCfg, mode = app.mode;
+  const MODE = { practice: N('practice'), journey: N('journey'), daily: N('daily'), challenge: N('challenge'), learn: N('learn'), hosted: N('hosted') };
   ui.showPause(
-    `${app.matchCfg?.name ?? 'Match'} — ${app.mode}${hosted ? ' · the server clock keeps running' : ''}`,
+    () => `${cfgName(cfg)} — ${T(MODE[mode] ?? mode)}${hosted ? ' · ' + T('the server clock keeps running') : ''}`,
     { hosted },
   );
 }
@@ -708,7 +723,7 @@ function updateHud() {
     : s.activeTicks;
   const sec = Math.floor(ticks / 60);
   ui.setClock(s.inOvertime ? 'OT' : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
-  if (s.moveBudget) ui.setBudget(`Budget ${Math.round(s.moveBudget[0])} u`);
+  if (s.moveBudget) ui.setBudget(T('Budget {n} u', { n: Math.round(s.moveBudget[0]) }));
   ui.setScores(s.scores[0], s.scores[1]);
   // One-shot warning when a timed match enters its final 10 seconds.
   if (!app.clockWarned && s.timeLimitTicks && !s.inOvertime && s.phase === rules.PHASE.ACTIVE && ticks > 0 && ticks <= 600) {
@@ -724,12 +739,11 @@ function updateBoardState(now) {
   const panel = document.getElementById('boardstate-panel');
   if (panel.hidden || !app.session) return;
   const s = app.session.state;
-  const dir = s.puck.vy < -10 ? 'toward your goal' : s.puck.vy > 10 ? 'toward the far goal' : 'nearly still';
+  const dir = s.puck.vy < -10 ? T('toward your goal') : s.puck.vy > 10 ? T('toward the far goal') : T('nearly still');
   ui.setBoardState(
-    `Score: you ${s.scores[0]}, opponent ${s.scores[1]}. ` +
-    `Puck at column ${Math.round(s.puck.x)} of 100, row ${Math.round(s.puck.y)} of 200, moving ${dir} ` +
-    `at ${Math.round(Math.hypot(s.puck.vx, s.puck.vy))} units per second. ` +
-    `Your mallet at column ${Math.round(s.mallets[0].x)}, row ${Math.round(s.mallets[0].y)}.`
+    T('Score: you {you}, opponent {opp}.', { you: s.scores[0], opp: s.scores[1] }) + ' ' +
+    T('Puck at column {x} of 100, row {y} of 200, moving {dir} at {speed} units per second.', { x: Math.round(s.puck.x), y: Math.round(s.puck.y), dir, speed: Math.round(Math.hypot(s.puck.vx, s.puck.vy)) }) + ' ' +
+    T('Your mallet at column {x}, row {y}.', { x: Math.round(s.mallets[0].x), y: Math.round(s.mallets[0].y) })
   );
 }
 
@@ -742,7 +756,7 @@ function vibrate(pattern) {
 // ---------------------------------------------------------------------------
 
 const difficultyPresets = [
-  { name: 'Relaxed', skill: 0.25 }, { name: 'Club', skill: 0.5 }, { name: 'Pro', skill: 0.75 }, { name: 'Legend', skill: 0.92 },
+  { name: N('Relaxed'), skill: 0.25 }, { name: N('Club'), skill: 0.5 }, { name: N('Pro'), skill: 0.75 }, { name: N('Legend'), skill: 0.92 },
 ];
 let pendingPractice = difficultyPresets[1];
 
@@ -774,8 +788,8 @@ ui.on('quick-play', () => {
     themeId: platform.save.progression.cosmetics.theme,
   };
   ui.showSetup({
-    title: 'Quick Match', description: 'First to 5 against a Club-strength opponent. Unranked.',
-    targetScore: 5, timeLimitSeconds: 0, ranked: false, players: '1 vs AI',
+    title: () => T('Quick Match'), description: () => T('First to 5 against a Club-strength opponent. Unranked.'),
+    targetScore: 5, timeLimitSeconds: 0, ranked: false, players: () => T('1 vs AI'),
     content: cfg,
   });
 });
@@ -783,9 +797,9 @@ ui.on('start-daily', () => {
   const d = dailyConfig(platform.now());
   const secs = platform.secondsUntilNextDaily();
   ui.showSetup({
-    title: d.name,
-    description: `One shared seed for everyone today. Ranked. Next daily in ${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m.`,
-    targetScore: d.targetScore, timeLimitSeconds: d.timeLimitSeconds, ranked: true, players: '1 vs AI',
+    title: () => cfgName(d),
+    description: () => T('One shared seed for everyone today. Ranked. Next daily in {h}h {m}m.', { h: Math.floor(secs / 3600), m: Math.floor((secs % 3600) / 60) }),
+    targetScore: d.targetScore, timeLimitSeconds: d.timeLimitSeconds, ranked: true, players: () => T('1 vs AI'),
     content: d,
   });
 });
@@ -794,20 +808,20 @@ ui.on('show-challenges', () => ui.showChallenges());
 ui.on('show-learn', () => ui.showLearn());
 ui.on('show-practice', () => {
   ui.showSetup({
-    title: 'Practice',
-    description: 'Unranked. Restart and undo freely; no effect on rating.',
-    targetScore: 5, timeLimitSeconds: 0, ranked: false, players: '1 vs AI',
+    title: () => T('Practice'),
+    description: () => T('Unranked. Restart and undo freely; no effect on rating.'),
+    targetScore: 5, timeLimitSeconds: 0, ranked: false, players: () => T('1 vs AI'),
     extras: (() => {
       const wrap = document.createElement('div');
       wrap.className = 'setting-row';
       const label = document.createElement('label');
-      label.textContent = 'Difficulty';
+      label.textContent = N('Difficulty');
       const sel = document.createElement('select');
-      sel.setAttribute('aria-label', 'Difficulty');
+      sel.setAttribute('aria-label', N('Difficulty'));
       difficultyPresets.forEach((d, i) => {
         const o = document.createElement('option');
         o.value = i; o.textContent = d.name;
-        if (i === 1) o.selected = true;
+        if (d === pendingPractice) o.selected = true;
         sel.append(o);
       });
       sel.addEventListener('change', () => (pendingPractice = difficultyPresets[Number(sel.value)]));
@@ -819,16 +833,16 @@ ui.on('show-practice', () => {
 });
 ui.on('start-journey', (stage) => {
   ui.showSetup({
-    title: `Stage ${stage.index + 1}: ${stage.name}`,
-    description: `${stage.mechanics.join(', ')}. ${stage.mastery ? 'Mastery stage — posts to the leaderboard.' : ''}`.trim(),
-    targetScore: stage.targetScore, timeLimitSeconds: stage.timeLimitSeconds, ranked: stage.mastery, players: '1 vs AI',
+    title: () => T('Stage {n}: {name}', { n: stage.index + 1, name: T(stage.name) }),
+    description: () => `${stage.mechanics.map((m) => T(MECHANICS[m] ?? m)).join(', ')}.${stage.mastery ? ' ' + T('Mastery stage — posts to the leaderboard.') : ''}`,
+    targetScore: stage.targetScore, timeLimitSeconds: stage.timeLimitSeconds, ranked: stage.mastery, players: () => T('1 vs AI'),
     content: stage,
   });
 });
 ui.on('start-challenge', (c) => {
   ui.showSetup({
-    title: c.name, description: c.description,
-    targetScore: c.targetScore, timeLimitSeconds: c.timeLimitSeconds ?? 0, ranked: true, players: '1 vs AI',
+    title: () => T(c.name), description: () => T(c.description),
+    targetScore: c.targetScore, timeLimitSeconds: c.timeLimitSeconds ?? 0, ranked: true, players: () => T('1 vs AI'),
     content: c,
   });
 });
@@ -838,7 +852,7 @@ ui.on('begin', (cfg) => {
   let content = cfg.content;
   if (!content) {
     content = {
-      id: 'practice', name: `Practice — ${pendingPractice.name}`, seed: (Math.random() * 2 ** 31) >>> 0,
+      id: 'practice', name: `Practice — ${pendingPractice.name}`, difficulty: pendingPractice.name, seed: (Math.random() * 2 ** 31) >>> 0,
       targetScore: 5, timeLimitSeconds: 0, obstacles: [], ai: { skill: pendingPractice.skill },
       themeId: platform.save.progression.cosmetics.theme, version: CONTENT_VERSION,
     };
@@ -928,7 +942,7 @@ const lobby = {
   invites: [],        // platform room invites addressed to me: [{ id, name }]
 };
 
-function yourName() { return platform.displayName ?? 'You'; }
+function yourName() { return platform.displayName ?? T('You'); }
 
 function refreshLobby() {
   ui.showLobby({
@@ -1065,15 +1079,15 @@ net.on('joined', (m) => {
   lobby.joined = true;
   lobby.roomCode = m.room;
   lobby.players = HOSTED_ROOMS
-    ? ['Host', `${yourName()} (you)`]
-    : ['Host (seat 1)', `${yourName()} (seat 2)`];
+    ? [N('Host'), () => T('{name} (you)', { name: yourName() })]
+    : [N('Host (seat 1)'), () => T('{name} (seat 2)', { name: yourName() })];
   lobby.status = 'Joined. Waiting for the match to start…';
   refreshLobby();
 });
 net.on('peer-joined', (m) => {
-  lobby.players = [`${yourName()} (host)`, `${m.name} (seat 2)`];
+  lobby.players = [() => T('{name} (host)', { name: yourName() }), () => T('{name} (seat 2)', { name: m.name })];
   lobby.canStartAI = false;
-  lobby.status = `${m.name} joined. Match starting…`;
+  lobby.status = () => T('{name} joined. Match starting…', { name: m.name });
   if (app.screen === 'lobby') refreshLobby();
 });
 net.on('peer-left', (m) => {
@@ -1100,7 +1114,7 @@ net.on('error', (m) => {
     ? 'No open tables right now. Create a room instead and an opponent can join you.'
     : m.error === 'match-in-progress'
       ? 'That table is mid-match and cannot take new players right now.'
-      : `Error: ${m.error}`;
+      : T('Error: {error}', { error: m.error });
   if (app.screen === 'lobby') refreshLobby();
 });
 net.on('disconnected', () => {
@@ -1108,15 +1122,21 @@ net.on('disconnected', () => {
   if (app.mode === 'hosted' || app.screen === 'lobby') { net.leave(); goTitle(); }
 });
 // Launch token dead mid-room: stop and offer a fresh launch from StarHermit.
-net.on('auth-lost', () => {
+net.on('auth-lost', (m) => {
   lobby.roomCode = null; lobby.joined = false; lobby.players = []; lobby.friends = null;
   goTitle();
-  ui.showSessionExpired();
+  ui.showSessionExpired(m?.reason);
+});
+// The room is gone (closed or finished elsewhere): the reconnect loop ended.
+net.on('unavailable', () => {
+  lobby.roomCode = null; lobby.joined = false; lobby.players = []; lobby.friends = null;
+  ui.toast(platformStrings().roomUnavailable);
+  goTitle();
 });
 ui.on('relaunch', () => {
   if (!platform.sh?.relaunch()) ui.toast(platformStrings().signedOut);
 });
-net.on('reconnecting', (m) => ui.toast(`Reconnecting (attempt ${m.attempt})…`));
+net.on('reconnecting', (m) => ui.toast(T('Reconnecting (attempt {n})…', { n: m.attempt })));
 net.on('resumed', () => {
   const away = net.takeAwaySummary();
   if (away) ui.toast(away); // "while you were away" summary
@@ -1140,7 +1160,7 @@ net.on('start', (m) => {
   ui.hideScreens();
   ui.showHud(true);
   ui.setScores(0, 0);
-  ui.setObjective(`First to 5 · hosted · ${net.isHost ? 'you host' : 'host-routed'} · server-authoritative`);
+  ui.setObjective(T(net.isHost ? 'First to 5 · hosted · you host · server-authoritative' : 'First to 5 · hosted · host-routed · server-authoritative'));
   audio.ensure();
   audio.startMusic();
 });
@@ -1159,7 +1179,7 @@ net.on('result', (m) => {
   audio.event(won ? 'win' : b.winner === -1 ? 'draw' : 'lose');
   ui.showResults({
     headline: won ? 'Victory' : b.winner === -1 ? 'Draw' : 'Defeat',
-    sub: `Hosted room ${net.room} · authoritative hash ${m.result.finalHash}`,
+    sub: ((room, hash) => () => T('Hosted room {room} · authoritative hash {hash}', { room, hash }))(net.room, m.result.finalHash),
     breakdown: { ...b, players: [b.players[me], b.players[opp]] },
     names: [yourName(), 'Opponent'],
     canRetry: false,
@@ -1175,4 +1195,12 @@ goTitle();
 requestAnimationFrame(frame);
 
 // Debug/testing hook (no gameplay privileges — read and scripted-input only).
+// The game language changed: the open screen re-renders in ui.js; refresh the
+// HUD text set once per match and the title's account line. The session,
+// rooms and sockets are untouched.
+document.addEventListener('gs-language', () => {
+  if (app.session && app.mode !== 'hosted') { setObjective(); updateHud(); }
+  ui.setAccountLine(platform.accountLine());
+});
+
 window.__gs = { app, platform, rules, ui, net };

@@ -7,6 +7,7 @@ import { TERMINAL } from './rules.js';
 import { PRESETS, CATEGORIES, presetTier, withPreset } from './gfx.js';
 import { gfxStrings } from './gfx-strings.js';
 import { platformStrings } from './platform-strings.js';
+import { T, N } from './i18n/t.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -32,11 +33,17 @@ function artImg(cls, name) {
 }
 
 const TERMINAL_LABEL = {
-  [TERMINAL.TARGET_SCORE]: 'Target score reached',
-  [TERMINAL.TIME_LIMIT]: 'Time limit',
-  [TERMINAL.OVERTIME_GOAL]: 'Overtime golden goal',
-  [TERMINAL.FORFEIT]: 'Forfeit',
-  [TERMINAL.MOVE_LIMIT]: 'Move budget exhausted',
+  [TERMINAL.TARGET_SCORE]: N('Target score reached'),
+  [TERMINAL.TIME_LIMIT]: N('Time limit'),
+  [TERMINAL.OVERTIME_GOAL]: N('Overtime golden goal'),
+  [TERMINAL.FORFEIT]: N('Forfeit'),
+  [TERMINAL.MOVE_LIMIT]: N('Move budget exhausted'),
+};
+
+// Journey mechanic tags shown under each stage name.
+const MECHANIC_LABEL = {
+  strike: N('strike'), defend: N('defend'), obstacles: N('obstacles'),
+  'time-pressure': N('time pressure'), 'move-budget': N('move budget'), combined: N('combined'),
 };
 
 export class UI {
@@ -63,6 +70,13 @@ export class UI {
 
     $('#btn-pause').addEventListener('click', () => this.emit('pause'));
     $('#btn-undo').addEventListener('click', () => this.emit('undo'));
+    // The game language changed: static text re-translates in place (js/i18n);
+    // the open screen is rebuilt from its builder, except Settings, where only
+    // the game's own Graphics block redraws so the shared sections stay mounted.
+    document.addEventListener('gs-language', () => {
+      if (this.currentScreen?.id === 'screen-settings-dialog') { this._gfxBuild?.(); return; }
+      this._rebuild?.();
+    });
     const bsBtn = $('#btn-boardstate');
     bsBtn.addEventListener('click', () => {
       const panel = $('#boardstate-panel');
@@ -82,6 +96,7 @@ export class UI {
   // ---------------------------------------------------------------- screens
 
   show(name, builder) {
+    this._rebuild = name ? () => this._reshow(name, builder) : null;
     if (this.currentScreen) {
       this._focusMemory = document.activeElement;
       this.currentScreen.remove();
@@ -99,6 +114,15 @@ export class UI {
       first.focus?.({ preventScroll: true });
       for (const n of [node, ...node.querySelectorAll('*')]) if (n.scrollTop) n.scrollTop = 0;
     });
+  }
+
+  /** Re-render the open screen in place (language change), keeping focus on its first control. */
+  _reshow(name, builder) {
+    if (!this.currentScreen) return;
+    const node = builder();
+    node.classList.add('screen');
+    this.currentScreen.replaceWith(node);
+    this.currentScreen = node;
   }
 
   hideScreens() {
@@ -127,7 +151,7 @@ export class UI {
     if (this.hudScoreYou.textContent !== String(you) || this.hudScoreOpp.textContent !== String(opp)) {
       this.hudScoreYou.textContent = you;
       this.hudScoreOpp.textContent = opp;
-      this.announce(`Score: you ${you}, opponent ${opp}`, false);
+      this.announce(T('Score: you {you}, opponent {opp}', { you, opp }), false);
     }
   }
   setClock(text) { this.hudClock.textContent = text; }
@@ -183,23 +207,23 @@ export class UI {
       el('div', { class: 'panel with-rails' },
         el('div', { class: 'rail' },
           el('h3', { text: 'Journey' }),
-          el('p', { text: `${done} / ${JOURNEY.length} stages cleared` }),
+          el('p', { text: T('{n} / {total} stages cleared', { n: done, total: JOURNEY.length }) }),
           el('h3', { text: 'Record' }),
-          el('p', { text: `${p.wins} wins · ${p.losses} losses` }),
-          el('p', { text: `Best streak: ${p.bestStreak}` }),
+          el('p', { text: T('{wins} wins · {losses} losses', { wins: p.wins, losses: p.losses }) }),
+          el('p', { text: T('Best streak: {n}', { n: p.bestStreak }) }),
         ),
         el('div', {},
           artImg('title-art', 'key-art'),
-          el('h1', { class: 'title-logo', text: 'GLOW STRIKERS' }),
+          el('h1', { class: 'title-logo', text: 'GLOW STRIKERS', 'data-i18n-skip': true }),
           el('p', { class: 'title-sub', text: 'Defend your goal. Strike the light.' }),
           el('p', { class: 'dim', id: 'account-line', text: this.platform.accountLine(), hidden: !this.platform.accountLine() }),
           el('div', { class: 'menu', role: 'navigation', 'aria-label': 'Main menu' },
             el('button', { class: 'btn primary', onclick: () => this.emit('quick-play') },
               'Play', el('span', { class: 'sub', text: 'Jump straight into a match' })),
             el('button', { class: 'btn', onclick: () => this.emit('start-daily') },
-              `Daily Challenge`, el('span', { class: 'sub', text: `${daily.name} · shared seed` })),
+              'Daily Challenge', el('span', { class: 'sub', text: T('Daily — {day} · shared seed', { day: daily.date ?? String(daily.name).replace(/^Daily — /, '') }) })),
             el('button', { class: 'btn', onclick: () => this.emit('show-journey') },
-              'Journey', el('span', { class: 'sub', text: `${done}/${JOURNEY.length} stages` })),
+              'Journey', el('span', { class: 'sub', text: T('{n}/{total} stages', { n: done, total: JOURNEY.length }) })),
             el('button', { class: 'btn', onclick: () => this.emit('show-challenges') }, 'Challenges'),
             el('button', { class: 'btn', onclick: () => this.emit('show-learn') },
               this.platform.settings.tutorialDone ? 'Learn (replay)' : 'Learn',
@@ -252,11 +276,12 @@ export class UI {
         list.append(el('button', {
           class: `list-item${done ? ' done' : ''}`, role: 'listitem',
           disabled: !unlocked,
-          'aria-label': `Stage ${s.index + 1}: ${s.name}${done ? `, completed with ${stars} stars` : unlocked ? '' : ', locked'}`,
+          'aria-label': done ? T('Stage {n}: {name}, completed with {stars} stars', { n: s.index + 1, name: T(s.name), stars })
+            : unlocked ? T('Stage {n}: {name}', { n: s.index + 1, name: T(s.name) }) : T('Stage {n}: {name}, locked', { n: s.index + 1, name: T(s.name) }),
           onclick: () => this.emit('start-journey', s),
         },
           el('span', { text: `${s.index + 1}.` }),
-          el('span', {}, s.name, el('span', { class: 'sub dim', text: s.mechanics.join(' · ') })),
+          el('span', {}, T(s.name), el('span', { class: 'sub dim', text: s.mechanics.map((m) => T(MECHANIC_LABEL[m] ?? m)).join(' · ') })),
           s.mastery ? el('span', { class: 'tag', text: 'MASTERY' }) : null,
           done ? el('span', { class: 'stars', text: '★'.repeat(stars) + '☆'.repeat(3 - stars) }) : null,
         ));
@@ -281,7 +306,7 @@ export class UI {
           class: `list-item${done ? ' done' : ''}`, role: 'listitem',
           onclick: () => this.emit('start-challenge', c),
         },
-          el('span', {}, c.name, el('span', { class: 'sub dim', text: c.description })),
+          el('span', {}, T(c.name), el('span', { class: 'sub dim', text: T(c.description) })),
           done ? el('span', { class: 'stars', text: '✓' }) : null,
         ));
       }
@@ -305,7 +330,7 @@ export class UI {
           class: `list-item${done ? ' done' : ''}`, role: 'listitem',
           onclick: () => this.emit('start-lesson', l),
         },
-          el('span', {}, l.title, el('span', { class: 'sub dim', text: l.text })),
+          el('span', {}, T(l.title), el('span', { class: 'sub dim', text: T(l.text) })),
           done ? el('span', { class: 'stars', text: '✓' }) : null,
         ));
       }
@@ -321,15 +346,17 @@ export class UI {
 
   /** Mode setup: rules, expected duration, assists, ranked badge — before commitment. */
   showSetup(cfg) {
-    const mins = cfg.timeLimitSeconds ? `${Math.round(cfg.timeLimitSeconds / 60)} min max` : 'a few minutes';
-    this.show('setup', () => el('section', { 'aria-label': `${cfg.title} setup` },
+    // cfg.title / cfg.description / cfg.players may be functions so the text
+    // follows a language change.
+    const txt = (v) => (typeof v === 'function' ? v() : v);
+    this.show('setup', () => el('section', { 'aria-label': T('{title} setup', { title: txt(cfg.title) }) },
       el('div', { class: 'panel' },
-        el('h2', { text: cfg.title }),
-        el('p', { class: 'dim', text: cfg.description }),
+        el('h2', { text: txt(cfg.title) }),
+        el('p', { class: 'dim', text: txt(cfg.description) }),
         el('div', { class: 'meta-grid' },
-          el('div', { class: 'meta-cell' }, el('b', { text: `First to ${cfg.targetScore}` }), 'Win condition'),
-          el('div', { class: 'meta-cell' }, el('b', { text: mins }), 'Expected duration'),
-          el('div', { class: 'meta-cell' }, el('b', { text: cfg.players ?? '1 vs AI' }), 'Players'),
+          el('div', { class: 'meta-cell' }, el('b', { text: T('First to {n}', { n: cfg.targetScore }) }), 'Win condition'),
+          el('div', { class: 'meta-cell' }, el('b', { text: cfg.timeLimitSeconds ? T('{n} min max', { n: Math.round(cfg.timeLimitSeconds / 60) }) : T('a few minutes') }), 'Expected duration'),
+          el('div', { class: 'meta-cell' }, el('b', { text: txt(cfg.players) ?? T('1 vs AI') }), 'Players'),
           el('div', { class: 'meta-cell' }, el('b', { text: cfg.ranked ? 'Recorded' : 'Unranked' }), cfg.ranked ? 'Counts on your board' : 'No rating effect'),
         ),
         cfg.extras ?? null,
@@ -352,7 +379,7 @@ export class UI {
     this.show('pause', () => el('section', { role: 'dialog', 'aria-modal': 'true', 'aria-label': label },
       el('div', { class: 'panel' },
         el('h2', { text: label }),
-        el('p', { class: 'dim', text: contextLabel }),
+        el('p', { class: 'dim', text: typeof contextLabel === 'function' ? contextLabel() : contextLabel }),
         el('div', { class: 'menu' },
           el('button', { class: 'btn primary', onclick: () => this.emit('resume') }, opts.hosted ? 'Back to Match' : 'Resume'),
           el('button', { class: 'btn', onclick: () => this.emit('show-settings', { from: 'pause' }) }, 'Settings'),
@@ -365,19 +392,24 @@ export class UI {
 
   // ---------------------------------------------------------------- session expired
 
-  /** Launch token could not be renewed: offer a fresh launch (needs this click). */
-  showSessionExpired() {
+  /**
+   * Launch token could not be renewed — or StarHermit needs updated-terms
+   * consent (reason 'terms-required'): offer a fresh launch (needs this click).
+   */
+  showSessionExpired(reason = 'expired') {
     const t = platformStrings();
-    this.show('session-expired', () => el('section', { role: 'alertdialog', 'aria-modal': 'true', 'aria-label': t.sessionExpired, id: 'session-expired' },
+    const terms = reason === 'terms-required';
+    const title = terms ? t.termsRequired : t.sessionExpired;
+    this.show('session-expired', () => el('section', { role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title, id: 'session-expired' },
       el('div', { class: 'panel' },
-        el('h2', { text: t.sessionExpired }),
-        el('p', { class: 'dim', text: t.sessionExpiredBody }),
+        el('h2', { text: title }),
+        el('p', { class: 'dim', text: terms ? t.termsRequiredBody : t.sessionExpiredBody }),
         el('div', { class: 'menu' },
           el('button', { class: 'btn primary', id: 'btn-relaunch', onclick: () => this.emit('relaunch') }, t.relaunch),
           el('button', { class: 'btn', onclick: () => this.emit('back') }, t.playLocal),
         ),
       )));
-    this.announce(t.sessionExpired, true);
+    this.announce(title, true);
   }
 
   // ---------------------------------------------------------------- results
@@ -388,41 +420,45 @@ export class UI {
     if (line) line.textContent = text;
   }
 
+  // `headline` is an English key ('Victory', 'Defeat', 'Draw', 'Lesson complete',
+  // 'Lesson ended'); `sub`, `next` and `leaderboard` may be functions so their
+  // text follows a language change.
   showResults({ headline, sub, breakdown, names, achievements = [], stars = null, next = null, canRetry = true, leaderboard = null }) {
+    const txt = (v) => (typeof v === 'function' ? v() : v);
     const rows = [
-      ['Goals', p => p.goals], ['Shots', p => p.shots], ['Saves', p => p.saves],
-      ['Steals', p => p.steals], ['Invalid actions', p => p.invalidActions],
-      ['Rail bounces', p => p.wallBounces], ['Fastest strike', p => `${p.maxPuckSpeed} u/s`],
+      [N('Goals'), p => p.goals], [N('Shots'), p => p.shots], [N('Saves'), p => p.saves],
+      [N('Steals'), p => p.steals], [N('Invalid actions'), p => p.invalidActions],
+      [N('Rail bounces'), p => p.wallBounces], [N('Fastest strike'), p => T('{n} u/s', { n: p.maxPuckSpeed })],
     ];
     const table = el('table', { class: 'breakdown' },
       el('thead', {}, el('tr', {},
         el('th', { text: 'Component' }),
-        el('th', { text: names?.[0] ?? 'You' }),
-        el('th', { text: names?.[1] ?? 'Opponent' }))),
+        el('th', { text: names?.[0] ?? N('You') }),
+        el('th', { text: names?.[1] ?? N('Opponent') }))),
       el('tbody', {}, rows.map(([label, fn]) => el('tr', {},
         el('td', { text: label }),
         el('td', { text: String(fn(breakdown.players[0])) }),
         el('td', { text: String(fn(breakdown.players[1])) })))),
       el('tfoot', {}, el('tr', {},
         el('td', { text: 'Duration' }),
-        el('td', { colspan: 2, text: `${Math.round(breakdown.players[0].elapsedTicks / 60)}s${breakdown.reason ? ` · ${TERMINAL_LABEL[breakdown.reason] ?? breakdown.reason}` : headline === 'Lesson complete' ? ' · Lesson objective completed' : ''}` }))),
+        el('td', { colspan: 2, text: `${Math.round(breakdown.players[0].elapsedTicks / 60)}s${breakdown.reason ? ` · ${T(TERMINAL_LABEL[breakdown.reason] ?? breakdown.reason)}` : headline === 'Lesson complete' ? ' · ' + T('Lesson objective completed') : ''}` }))),
     );
     const art = headline === 'Victory' || headline === 'Lesson complete' ? 'results-victory'
       : headline === 'Defeat' ? 'results-defeat' : null;
     this.show('results', () => el('section', { role: 'dialog', 'aria-label': 'Match results' },
       el('div', { class: 'panel' },
         art ? artImg('result-art', art) : null,
-        el('h2', { class: 'center', text: headline }),
-        sub ? el('p', { class: 'center dim', text: sub }) : null,
+        el('h2', { class: 'center', text: T(headline) }),
+        sub ? el('p', { class: 'center dim', text: txt(sub) }) : null,
         stars != null ? el('p', { class: 'center', style: 'font-size:1.6rem;color:var(--accent-gold)', text: '★'.repeat(stars) + '☆'.repeat(3 - stars) }) : null,
         table,
         achievements.length ? el('div', {},
           el('h3', { text: 'Achievements unlocked' }),
-          ...achievements.map(a => el('p', { text: `🏆 ${a.name} — ${a.description}` }))) : null,
-        leaderboard ? el('p', { id: 'results-lb', class: 'center dim', 'aria-live': 'polite', text: leaderboard }) : null,
+          ...achievements.map(a => el('p', { text: `🏆 ${T(a.name)} — ${T(a.description)}` }))) : null,
+        leaderboard ? el('p', { id: 'results-lb', class: 'center dim', 'aria-live': 'polite', text: txt(leaderboard) }) : null,
         el('div', { class: 'btn-row' },
           canRetry ? el('button', { class: 'btn primary', onclick: () => this.emit('retry') }, 'Retry') : null,
-          next ? el('button', { class: 'btn primary', onclick: () => this.emit('next') }, next) : null,
+          next ? el('button', { class: 'btn primary', onclick: () => this.emit('next') }, txt(next)) : null,
           el('button', { class: 'btn', onclick: () => this.emit('leave') }, 'Menu'),
         ),
       )));
@@ -440,11 +476,11 @@ export class UI {
         el('h2', { text: 'How to Play' }),
         el('p', { text: 'Defend the glowing goal at your end. Strike the puck into your opponent\u2019s goal. First to the target score wins.' }),
         el('div', { class: 'meta-grid' },
-          card('Move', `Drag anywhere in your half, or use ${k.up}/${k.down}/${k.left}/${k.right}. Your mallet cannot cross the centre line.`),
+          card('Move', T('Drag anywhere in your half, or use {up}/{down}/{left}/{right}. Your mallet cannot cross the centre line.', k)),
           card('Strike', 'Meet the puck with your mallet. Hit through it toward the far goal; faster mallets strike harder.'),
           card('Defend', 'Guard your goal mouth when the puck approaches. Blocks from deep in your half count as saves.'),
           card('Rails', 'The luminous rails are live — bank shots off them to bend around defenders.'),
-          card('Pause', `${k.pause} pauses. ${k.undo} undoes in Practice. ${k.camera} recentres the camera.`),
+          card('Pause', T('{pause} pauses. {undo} undoes in Practice. {camera} recentres the camera.', k)),
           card('Gamepad', 'Left stick moves, Start pauses. Buttons can be remapped by your platform.'),
         ),
         el('div', { class: 'btn-row' },
@@ -477,9 +513,9 @@ export class UI {
       }, options.map(([v, t]) => el('option', { value: v, text: t, selected: s[key] === v }))));
 
     const keyRow = (label, key) => {
-      const btn = el('button', { class: 'btn small', 'data-key-action': key, text: P.keyMap()[key].map(prettyKey).join(' / '), 'aria-label': `Remap ${label}` });
+      const btn = el('button', { class: 'btn small', 'data-key-action': key, text: P.keyMap()[key].map(prettyKey).join(' / '), 'aria-label': T('Remap {action}', { action: T(label) }) });
       btn.addEventListener('click', () => {
-        btn.textContent = 'press a key…';
+        btn.textContent = N('press a key…');
         const onKey = (e) => {
           e.preventDefault();
           P.setKey(key, e.code);
@@ -491,7 +527,7 @@ export class UI {
       return el('div', { class: 'setting-row' }, el('label', { text: label }), btn);
     };
 
-    this.show('settings', () => el('section', { role: 'dialog', 'aria-label': 'Settings' },
+    this.show('settings', () => el('section', { role: 'dialog', 'aria-label': 'Settings', id: 'screen-settings-dialog' },
       el('div', { class: 'panel' },
         el('h2', { text: 'Settings' }),
         el('div', { class: 'settings-group' },
@@ -520,7 +556,7 @@ export class UI {
           keyRow('Move left', 'left'), keyRow('Move right', 'right'),
           keyRow('Pause', 'pause'), keyRow('Undo', 'undo'), keyRow('Camera reset', 'camera'), keyRow('Hint', 'hint'),
           el('div', { class: 'setting-row' },
-            el('button', { class: 'btn small', id: 'reset-keys', onclick: () => { P.resetKeys(); this.showSettings(opts); } }, platformStrings().resetKeys)),
+            el('button', { class: 'btn small', id: 'reset-keys', onclick: () => { P.resetKeys(); this.showSettings(opts); } }, T('Reset controls'))),
         ),
         el('div', { class: 'settings-group' },
           el('h3', { text: 'Text & Privacy' }),
@@ -542,8 +578,12 @@ export class UI {
    */
   _graphicsSection() {
     const P = this.platform;
-    const L = gfxStrings();
-    const section = el('div', { class: 'settings-group', id: 'gfx-section' });
+    let L = gfxStrings();
+    // The shared game-options.js sections (frame rate, Language, Sound, Report)
+    // mount in this block, after the inner box, which is all build() redraws.
+    const section = el('div', { class: 'settings-group', id: 'gfx-section', 'data-options-graphics': true });
+    const inner = el('div', { class: 'gfx-inner' });
+    section.append(inner);
     const info = () => this.gfxInfo?.() ?? { detected: 'balanced', resolved: { preset: 'balanced' }, summary: '', gpu: '' };
     const save = (graphics, quiet = false) => {
       P.updateSettings({ graphics });
@@ -568,12 +608,13 @@ export class UI {
       el('input', { type: 'checkbox', id, checked, onchange }));
 
     const build = (focusId) => {
+      L = gfxStrings(); // follows the game language
       const g = P.settings.graphics ?? {};
       const i = info();
       const preset = i.resolved.preset;
       const scalePct = Math.round((Number(g.render_scale) || 1) * 100);
       const scaleOut = el('output', { id: 'gfx-scale-value', for: 'gfx-scale', text: `${scalePct}%` });
-      section.replaceChildren(
+      inner.replaceChildren(
         el('h3', { text: L.graphics }),
         rowSelect('gfx-preset', L.quality,
           [['auto', L.auto.replace('{tier}', L.presets[i.detected])], ...PRESETS.map(p => [p, L.presets[p]])],
@@ -612,6 +653,7 @@ export class UI {
       if (focusId) section.querySelector(`#${focusId}`)?.focus();
     };
     build();
+    this._gfxBuild = () => { if (section.isConnected) build(); };
     return section;
   }
 
@@ -627,7 +669,7 @@ export class UI {
             class: `list-item${unlocked[a.key] ? ' done' : ''}`, role: 'listitem',
           },
             el('span', { text: unlocked[a.key] ? '🏆' : '🔒' }),
-            el('span', {}, a.name, el('span', { class: 'sub dim', text: a.description })),
+            el('span', {}, T(a.name), el('span', { class: 'sub dim', text: T(a.description) })),
             unlocked[a.key] ? el('span', { class: 'tag', text: 'UNLOCKED' }) : null,
           ))),
         this._backRow(),
@@ -636,7 +678,7 @@ export class UI {
 
   showLeaderboard(dailyEntries = [], journeyEntries = [], platform = null) {
     const entryRow = (e) => el('div', { class: 'list-item' },
-      el('span', { text: e.you ? `${e.name} (you)` : (e.name ?? 'You') }),
+      el('span', { text: e.you ? T('{name} (you)', { name: e.name }) : (e.name ?? T('You')) }),
       el('span', { class: 'dim', text: `${Math.round((e.durationTicks ?? e.duration ?? 0) / 60)}s` }),
       el('span', { class: 'stars', text: `${e.score}` }));
     const platformSection = platform === 'loading'
@@ -671,7 +713,7 @@ export class UI {
     // state: { status, roomCode, joined, rooms, players, chat: [{from,text}] }
     this.show('lobby', () => {
       const chatLog = el('div', { class: 'chat-log', id: 'chat-log', role: 'log', 'aria-label': 'Lobby chat' },
-        (state.chat ?? []).map(m => el('p', {}, el('b', { text: `${m.from}: ` }), m.text)));
+        (state.chat ?? []).map(m => el('p', { 'data-i18n-skip': true }, el('b', { text: `${m.from}: ` }), m.text)));
       const input = el('input', { type: 'text', maxlength: 200, 'aria-label': 'Chat message', placeholder: 'Message (10/min max)' });
       const joinInput = el('input', { type: 'text', maxlength: 5, placeholder: 'CODE', 'aria-label': 'Room code',
         style: 'text-transform:uppercase;width:90px' });
@@ -683,12 +725,12 @@ export class UI {
       return el('section', { 'aria-label': 'Hosted play lobby' },
         el('div', { class: 'panel' },
           el('h2', { text: 'Hosted Play' }),
-          el('p', { class: 'dim', text: state.status }),
+          el('p', { class: 'dim', text: typeof state.status === 'function' ? state.status() : state.status }),
           state.roomCode ? el('p', { class: 'center' },
             'Room code: ', el('b', { class: 'mono', style: 'font-size:1.4rem;letter-spacing:0.2em', text: state.roomCode })) : null,
           el('div', { class: 'list' },
             (state.players ?? []).map(p => el('div', { class: 'list-item' },
-              el('span', { text: p }),
+              el('span', { text: typeof p === 'function' ? p() : p }),
             ))),
           el('div', { class: 'btn-row' },
             !state.joined ? el('button', { class: 'btn primary', onclick: () => this.emit('lobby-create') }, 'Create Room') : null,
@@ -700,7 +742,7 @@ export class UI {
             el('h3', { text: platformStrings().inviteFriends }),
             state.friends.length
               ? el('div', { class: 'list' }, state.friends.map(f => el('div', { class: 'list-item' },
-                  el('span', { text: `${f.name} · ${f.online ? platformStrings().online : platformStrings().offline}` }),
+                  el('span', {}, el('span', { 'data-i18n-skip': true, text: f.name }), ` · ${f.online ? platformStrings().online : platformStrings().offline}`),
                   f.invited
                     ? el('span', { class: 'dim', text: platformStrings().invited })
                     : el('button', { class: 'btn small', 'data-invite-user': f.userId, onclick: () => this.emit('lobby-invite-friend', f.userId) }, platformStrings().inviteBtn))))
@@ -728,7 +770,7 @@ export class UI {
     if (!this._boot) {
       this._boot = el('section', { class: 'screen', id: 'boot-screen', 'aria-label': 'Loading' },
         el('div', { class: 'panel' },
-          el('h1', { class: 'title-logo', text: 'GLOW STRIKERS' }),
+          el('h1', { class: 'title-logo', text: 'GLOW STRIKERS', 'data-i18n-skip': true }),
           el('p', { class: 'dim', id: 'boot-label' }),
           el('div', { class: 'progress' }, el('div', { id: 'boot-bar' }))));
       this.screensRoot.append(this._boot);

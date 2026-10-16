@@ -1,5 +1,5 @@
-// Localized strings for the Graphics settings section. The rest of the UI is
-// English-only; this table picks a locale from navigator.language.
+// Localized strings for the Graphics settings section (the rest of the UI is
+// in js/i18n); the locale follows the game language (window.GSI18N).
 
 const EN = {
   graphics: 'Graphics', quality: 'Quality', auto: 'Auto (detected: {tier})', fromPreset: 'From preset ({tier})',
@@ -84,6 +84,6 @@ export function pickLocale(tag) {
   return LANG_DEFAULT[lang] ?? 'en-US';
 }
 
-export function gfxStrings(tag = (typeof navigator !== 'undefined' ? navigator.language : 'en-US')) {
+export function gfxStrings(tag = globalThis.GSI18N?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')) {
   return GFX_STRINGS[pickLocale(tag)];
 }

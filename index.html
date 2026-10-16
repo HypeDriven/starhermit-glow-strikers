@@ -21,6 +21,10 @@
 <script src="ui-scale.js"></script>
 <script src="browser-guard.js"></script>
 <script src="starhermit-sdk.js"></script>
+<script src="sh-language.js"></script>
+<script src="js/i18n/strings.js"></script>
+<script src="js/i18n/strings-content.js"></script>
+<script src="js/i18n/i18n.js"></script>
 </head>
 <body>
   <div id="app">
@@ -35,7 +39,7 @@
           <span id="hud-clock" class="score-pill">0:00</span>
           <span id="score-opp" class="score-pill score-opp">0</span>
         </div>
-        <button id="btn-pause" class="hud-btn" aria-label="Pause game">II</button>
+        <button id="btn-pause" class="hud-btn" aria-label="Pause game"><span data-i18n-skip>II</span></button>
       </div>
       <div id="hud-banner" role="status" aria-live="assertive"></div>
       <div id="hud-bottom">

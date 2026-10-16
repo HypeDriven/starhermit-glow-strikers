@@ -3,6 +3,7 @@
 // effects, ambience, voice — independently mixed. A caption hook surfaces
 // meaningful audio as text so nothing is audio-only.
 
+import { T } from './i18n/t.js';
 import { RngStream } from './rng.js';
 
 // Authored one-shot samples (sfx/manifest.json) backing logical events. Each
@@ -112,7 +113,7 @@ export class AudioEngine {
   _captionFor(name, opts = {}) {
     switch (name) {
       case 'invalid': this._caption('Invalid action'); break;
-      case 'countdown': this._caption(`Starting in ${opts.remaining}`); break;
+      case 'countdown': this._caption(T('Starting in {n}', { n: opts.remaining })); break;
       case 'go': this._caption('Go!'); break;
       case 'goal': this._caption(opts.scorer === 0 ? 'Goal for you!' : 'Goal conceded'); break;
       case 'win': this._caption('Victory'); break;

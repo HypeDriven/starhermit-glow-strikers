@@ -366,7 +366,8 @@ table.breakdown th { color: var(--text-dim); font-weight: 500; }
   border-bottom: 1px solid rgba(42, 58, 102, 0.5);
   min-height: 44px;
 }
-.setting-row label { flex: 1; }
+.setting-row label { flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; } /* long translations wrap instead of pushing controls out */
+.setting-row select { min-width: 0; }
 .setting-row input[type="range"] { width: 140px; }
 .setting-row select, .setting-row input[type="text"] {
   background: var(--panel-solid);

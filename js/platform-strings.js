@@ -1,9 +1,11 @@
 // Localized strings for the StarHermit account surface (sign-in, invite link,
-// room invites, controls reset, sign-out notice). Locale picked from
-// navigator.language like the Graphics section (js/gfx-strings.js).
+// room invites, controls reset, sign-out notice, session-expired and
+// updated-terms dialogs) in the game language (js/i18n; window.GSI18N),
+// picked like the Graphics section (js/gfx-strings.js).
 import { pickLocale } from './gfx-strings.js';
 
 const EN = {
+  termsRequired: 'Updated terms to accept', termsRequiredBody: 'StarHermit needs you to accept its updated terms, so the room connection stopped. Go back to StarHermit to review them.', roomUnavailable: 'This room is no longer available.',
   signIn: 'Sign in with StarHermit', invite: 'Invite a friend',
   inviteCopied: 'Invite link copied to clipboard', inviteFailed: 'Could not copy the invite link',
   signedOut: 'Signed out of StarHermit — progress keeps saving on this device',
@@ -21,6 +23,7 @@ const STRINGS = {
   'en-US': EN,
   'en-GB': EN,
   'es-419': {
+    termsRequired: 'Términos actualizados', termsRequiredBody: 'StarHermit necesita que aceptes sus términos actualizados y se detuvo la conexión con la sala. Vuelve a StarHermit para revisarlos.', roomUnavailable: 'Esta sala ya no está disponible.',
     signIn: 'Iniciar sesión con StarHermit', invite: 'Invitar a un amigo',
     inviteCopied: 'Enlace de invitación copiado', inviteFailed: 'No se pudo copiar el enlace de invitación',
     signedOut: 'Se cerró la sesión de StarHermit; el progreso se sigue guardando en este dispositivo',
@@ -34,6 +37,7 @@ const STRINGS = {
     lbPosted: 'Puntuación enviada a la clasificación.', lbNotPosted: 'No se envió la puntuación a la clasificación.',
   },
   'es-ES': {
+    termsRequired: 'Términos actualizados', termsRequiredBody: 'StarHermit necesita que aceptes sus términos actualizados y se ha detenido la conexión con la sala. Vuelve a StarHermit para revisarlos.', roomUnavailable: 'Esta sala ya no está disponible.',
     signIn: 'Iniciar sesión con StarHermit', invite: 'Invitar a un amigo',
     inviteCopied: 'Enlace de invitación copiado', inviteFailed: 'No se ha podido copiar el enlace de invitación',
     signedOut: 'Se ha cerrado la sesión de StarHermit; el progreso se sigue guardando en este dispositivo',
@@ -47,6 +51,7 @@ const STRINGS = {
     lbPosted: 'Puntuación enviada a la clasificación.', lbNotPosted: 'No se ha enviado la puntuación a la clasificación.',
   },
   'de-DE': {
+    termsRequired: 'Aktualisierte Bedingungen', termsRequiredBody: 'StarHermit braucht deine Zustimmung zu den aktualisierten Bedingungen, daher wurde die Raumverbindung getrennt. Kehre zu StarHermit zurück, um sie zu prüfen.', roomUnavailable: 'Dieser Raum ist nicht mehr verfügbar.',
     signIn: 'Mit StarHermit anmelden', invite: 'Freund einladen',
     inviteCopied: 'Einladungslink kopiert', inviteFailed: 'Einladungslink konnte nicht kopiert werden',
     signedOut: 'Von StarHermit abgemeldet – der Fortschritt wird weiter auf diesem Gerät gespeichert',
@@ -60,6 +65,7 @@ const STRINGS = {
     lbPosted: 'Punktzahl an die Bestenliste gesendet.', lbNotPosted: 'Punktzahl nicht an die Bestenliste gesendet.',
   },
   'fr-FR': {
+    termsRequired: 'Conditions mises à jour', termsRequiredBody: 'StarHermit a besoin que tu acceptes ses conditions mises à jour, la connexion au salon a donc été interrompue. Retourne sur StarHermit pour les consulter.', roomUnavailable: 'Ce salon n’est plus disponible.',
     signIn: 'Se connecter avec StarHermit', invite: 'Inviter un ami',
     inviteCopied: 'Lien d’invitation copié', inviteFailed: 'Impossible de copier le lien d’invitation',
     signedOut: 'Déconnecté de StarHermit : la progression reste enregistrée sur cet appareil',
@@ -73,6 +79,7 @@ const STRINGS = {
     lbPosted: 'Score envoyé au classement.', lbNotPosted: 'Score non envoyé au classement.',
   },
   'fr-CA': {
+    termsRequired: 'Conditions mises à jour', termsRequiredBody: 'StarHermit a besoin que tu acceptes ses conditions mises à jour, la connexion à la salle a donc été interrompue. Retourne sur StarHermit pour les consulter.', roomUnavailable: 'Cette salle n’est plus disponible.',
     signIn: 'Se connecter avec StarHermit', invite: 'Inviter un ami',
     inviteCopied: 'Lien d’invitation copié', inviteFailed: 'Impossible de copier le lien d’invitation',
     signedOut: 'Déconnecté de StarHermit : la progression reste enregistrée sur cet appareil',
@@ -86,6 +93,7 @@ const STRINGS = {
     lbPosted: 'Pointage envoyé au classement.', lbNotPosted: 'Pointage non envoyé au classement.',
   },
   'pt-BR': {
+    termsRequired: 'Termos atualizados', termsRequiredBody: 'O StarHermit precisa que você aceite os termos atualizados, então a conexão com a sala foi interrompida. Volte ao StarHermit para revisá-los.', roomUnavailable: 'Esta sala não está mais disponível.',
     signIn: 'Entrar com StarHermit', invite: 'Convidar um amigo',
     inviteCopied: 'Link de convite copiado', inviteFailed: 'Não foi possível copiar o link de convite',
     signedOut: 'Você saiu do StarHermit — o progresso continua salvo neste dispositivo',
@@ -99,6 +107,7 @@ const STRINGS = {
     lbPosted: 'Pontuação enviada para o ranking.', lbNotPosted: 'A pontuação não foi enviada para o ranking.',
   },
   'it-IT': {
+    termsRequired: 'Termini aggiornati', termsRequiredBody: 'StarHermit ha bisogno che tu accetti i termini aggiornati, quindi la connessione alla stanza si è interrotta. Torna su StarHermit per leggerli.', roomUnavailable: 'Questa stanza non è più disponibile.',
     signIn: 'Accedi con StarHermit', invite: 'Invita un amico',
     inviteCopied: 'Link d’invito copiato', inviteFailed: 'Impossibile copiare il link d’invito',
     signedOut: 'Disconnesso da StarHermit: i progressi restano salvati su questo dispositivo',
@@ -116,6 +125,6 @@ const STRINGS = {
 export const PLATFORM_LOCALES = Object.keys(STRINGS);
 
 /** Strings for the browser's locale (en-US fallback per key). */
-export function platformStrings(tag = (typeof navigator !== 'undefined' ? navigator.language : 'en-US')) {
+export function platformStrings(tag = globalThis.GSI18N?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')) {
   return { ...EN, ...(STRINGS[pickLocale(tag)] ?? {}) };
 }

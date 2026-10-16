@@ -8,6 +8,7 @@
 // The SDK renews it, and owns the cloud-save slot game:<slug>, the settings
 // KV and the controls endpoint. Without a token nothing touches the network.
 
+import { T, N } from './i18n/t.js';
 import { hashValue } from './rng.js';
 import { ACHIEVEMENTS, CONTENT_VERSION, RULESET_ID } from './content.js';
 
@@ -93,6 +94,7 @@ export class Platform {
     this._lastSettings = null;
     if (sh) {
       sh.on('saved', (ok) => this._setSync(ok ? 'synced' : 'offline'));
+      sh.on('saveconflict', () => { this._resolveConflict(); });
       sh.on('auth', (a) => {
         if (a.signedIn) return;
         this.keyBindings = null;
@@ -116,14 +118,14 @@ export class Platform {
   get displayName() {
     if (!this.hosted) return null;
     if (this.nickname) return this.nickname;
-    return this.sub ? `Player ${this.sub.slice(0, 6)}` : null;
+    return this.sub ? T('Player {id}', { id: this.sub.slice(0, 6) }) : null;
   }
 
   /** Title-screen identity line; '' offline. */
   accountLine() {
     if (!this.hosted) return '';
-    const sync = { saving: 'saving…', synced: 'synced', offline: 'offline' }[this.syncStatus] ?? 'offline';
-    return `Playing as ${this.displayName ?? '…'} · cloud save ${sync}`;
+    const key = { saving: N('Playing as {name} · cloud save saving…'), synced: N('Playing as {name} · cloud save synced') }[this.syncStatus] ?? N('Playing as {name} · cloud save offline');
+    return T(key, { name: this.displayName ?? '…' });
   }
 
   _setSync(status) {
@@ -155,7 +157,7 @@ export class Platform {
   /** Resolve a user id to a display nickname (SDK-cached); "Player <id>" fallback. */
   async profileFor(userId) {
     const p = this.hosted ? await this.sh.profile(userId).catch(() => null) : null;
-    return p?.displayName ?? `Player ${String(userId).slice(0, 6)}`;
+    return p?.displayName ?? T('Player {id}', { id: String(userId).slice(0, 6) });
   }
 
   /** Load the signed-in player's profile into displayName. */
@@ -184,7 +186,7 @@ export class Platform {
         const userId = r?.userId ?? r?.playerId ?? null;
         base.entries.push({
           userId,
-          name: userId ? await this.profileFor(userId) : (r?.name ?? 'Player'),
+          name: userId ? await this.profileFor(userId) : (r?.name ?? T('Player')),
           score: r?.score ?? 0,
           rank: r?.rank ?? null,
           you: !!userId && userId === this.sub,
@@ -213,20 +215,39 @@ export class Platform {
   flushCloud() { return this.hosted ? this.sh.flushSave(true) : Promise.resolve(false); }
 
   /**
-   * Load the remote save slot; on success the remote doc wins (same checksum +
-   * version validation as the local path) and the local cache is rewritten.
-   * An empty slot is seeded from the local doc.
+   * Load the remote save slot (same checksum + version validation as the local
+   * path) and merge it with the local doc (mergeSaves: nothing from either side
+   * is dropped); the local cache is rewritten and a merge that differs from the
+   * remote doc is saved back. An empty slot is seeded from the local doc.
+   * loadJSON() checks the slot info itself and records its version, so every
+   * later write is conditional on it.
    */
   async cloudLoad() {
     if (!this.hosted) return false;
-    const info = await this.sh.saveInfo();
-    const wrapped = info && info.exists === false ? null : await this.sh.loadJSON();
+    const wrapped = await this.sh.loadJSON();
     if (!wrapped) { this._queueCloudSave(); return false; }
     if (wrapped.checksum !== hashValue(wrapped.payload)) throw new Error('save checksum mismatch');
-    this.save = migrate(JSON.parse(wrapped.payload));
+    const remote = migrate(JSON.parse(wrapped.payload));
+    this.save = mergeSaves(remote, this.save);
     this._writeLocal();
     this._setSync('synced');
+    if (JSON.stringify(this.save) !== JSON.stringify(remote)) this._queueCloudSave();
     return true;
+  }
+
+  /**
+   * Another device saved since our last read: the SDK refused the conditional
+   * write and blocks writes until a reload. Reload, merge, adopt, save again.
+   */
+  async _resolveConflict() {
+    let wrapped = null;
+    try { wrapped = await this.sh.loadJSON(); } catch { /* keep local */ }
+    if (wrapped && wrapped.checksum === hashValue(wrapped.payload)) {
+      this.save = mergeSaves(migrate(JSON.parse(wrapped.payload)), this.save);
+      this._writeLocal();
+      this.onMerged?.();
+    }
+    if (!this.sh.saveConflicted()) this._queueCloudSave(); else this._setSync('error');
   }
 
   /** Apply platform preferences over the local ones (type-checked); true when changed. */
@@ -437,6 +458,42 @@ function migrateGraphics(settings) {
   }
   delete settings.quality;
   return settings;
+}
+
+/**
+ * Merge two diverged save docs so neither device loses progress: union of
+ * cleared stages, lessons, daily days, challenges and achievements (earliest
+ * unlock), the best stars per stage, the larger goal / win / loss / best-streak
+ * counts, and the union of local board entries. Settings, cosmetics and the
+ * current streak come from `local` (this device).
+ */
+export function mergeSaves(remote, local) {
+  const a = migrate(remote), b = migrate(local);
+  const out = structuredClone(b);
+  const pa = a.progression, pb = b.progression, po = out.progression;
+  const union = (x, y) => [...new Set([...(x || []), ...(y || [])])];
+  const num = (x) => (Number.isFinite(x) ? x : 0);
+  po.journeyCompleted = union(pa.journeyCompleted, pb.journeyCompleted);
+  po.lessonsDone = union(pa.lessonsDone, pb.lessonsDone);
+  po.dailyDays = union(pa.dailyDays, pb.dailyDays).sort();
+  po.challengesDone = union(pa.challengesDone, pb.challengesDone);
+  po.journeyStars = { ...pa.journeyStars };
+  for (const [k, v] of Object.entries(pb.journeyStars || {})) po.journeyStars[k] = Math.max(num(v), num(po.journeyStars[k]));
+  for (const k of ['totalGoals', 'wins', 'losses', 'bestStreak']) po[k] = Math.max(num(pa[k]), num(pb[k]));
+  out.achievements = { ...a.achievements };
+  for (const [k, v] of Object.entries(b.achievements || {})) {
+    const other = out.achievements[k];
+    out.achievements[k] = !other || num(v?.unlockedAt) && num(v.unlockedAt) < num(other.unlockedAt) ? v : other;
+  }
+  const entries = (x, y) => {
+    const seen = new Set();
+    return [...(x || []), ...(y || [])].filter((e) => { const id = JSON.stringify(e); if (seen.has(id)) return false; seen.add(id); return true; });
+  };
+  const la = a.leaderboards || {}, lb = b.leaderboards || {};
+  out.leaderboards = { daily: {}, journey: entries(la.journey, lb.journey), challenge: {} };
+  for (const k of new Set([...Object.keys(la.daily || {}), ...Object.keys(lb.daily || {})])) out.leaderboards.daily[k] = entries(la.daily?.[k], lb.daily?.[k]);
+  for (const k of new Set([...Object.keys(la.challenge || {}), ...Object.keys(lb.challenge || {})])) out.leaderboards.challenge[k] = entries(la.challenge?.[k], lb.challenge?.[k]);
+  return out;
 }
 
 function migrate(save) {

@@ -17,6 +17,7 @@
 //   JSON text control frames (guests: ready/chat only, <=4 KB).
 
 import * as rules from './rules.js';
+import { T } from './i18n/t.js';
 import { createAI } from './ai.js';
 
 const PHASE_NAMES = ['countdown', 'active', 'goalPause', 'terminal'];
@@ -171,7 +172,7 @@ export class HostedClient {
         case 'resumed':
           this.room = msg.room; this.seat = msg.seat;
           this._awaySummary = msg.missed
-            ? `While you were away: score ${msg.missed.scores[0]}–${msg.missed.scores[1]}, tick ${msg.missed.tick}.`
+            ? T('While you were away: score {a}–{b}, tick {tick}.', { a: msg.missed.scores[0], b: msg.missed.scores[1], tick: msg.missed.tick })
             : null;
           break;
         case 'chat':
@@ -361,13 +362,22 @@ export class RoomsClient {
       const renewal = await this._renewForReconnect();
       if (!this.room) return;
       if (renewal === 'relaunch') return this._authLost();
+      // Updated terms are pending: stop like auth loss and ask the player to
+      // reopen the game from StarHermit to review them.
+      if (renewal === 'terms-required') return this._authLost('terms-required');
       if (renewal !== 'renewed') return this._scheduleReconnect();
       this._api('/api/v1/realtime/rooms/mine')
         .then(async (res) => {
+          if (res.status === 403) {
+            const body = await res.json().catch(() => null);
+            if (body?.error === 'terms_acceptance_required') return this._authLost('terms-required');
+          }
+          // The room is gone (closed or finished elsewhere): end the loop and say so.
+          if (res.status === 404 || res.status === 410) return this._unavailable();
           if (!res.ok) throw new Error(String(res.status));
           const m = await res.json();
           const rid = m?.roomId ?? m?.id ?? m?.room?.id ?? null;
-          if (!rid) throw new Error('not-in-room');
+          if (!rid) return this._unavailable();
           this.room = rid;
           await this._connectWs();
           if (!this.isHost && this.snap) {
@@ -385,8 +395,8 @@ export class RoomsClient {
     try { return await sh.renewForReconnect(); } catch { return 'retry'; } finally { this.renewing = false; }
   }
 
-  /** Renewal refused: drop the room locally (REST would 401) and surface relaunch. */
-  _authLost() {
+  /** The room no longer exists: stop reconnecting, drop it locally and tell the UI. */
+  _unavailable() {
     this.hostSim = null;
     this.snap = this.prevSnap = null;
     this.room = null;
@@ -394,7 +404,22 @@ export class RoomsClient {
     this.isHost = false;
     try { this.ws?.close(); } catch { /* already closed */ }
     this.ws = null;
-    this.handlers['auth-lost']?.();
+    this.handlers['unavailable']?.();
+  }
+
+  /**
+   * Renewal refused (or updated terms pending, reason 'terms-required'): drop
+   * the room locally (REST would 401/403) and surface relaunch.
+   */
+  _authLost(reason = 'expired') {
+    this.hostSim = null;
+    this.snap = this.prevSnap = null;
+    this.room = null;
+    this.seat = -1;
+    this.isHost = false;
+    try { this.ws?.close(); } catch { /* already closed */ }
+    this.ws = null;
+    this.handlers['auth-lost']?.({ reason });
   }
 
   _sendControl(obj) {
@@ -645,7 +670,7 @@ export class RoomsClient {
         break;
       case 'resumed':
         this._awaySummary = msg.missed
-          ? `While you were away: score ${msg.missed.scores[0]}–${msg.missed.scores[1]}, tick ${msg.missed.tick}.`
+          ? T('While you were away: score {a}–{b}, tick {tick}.', { a: msg.missed.scores[0], b: msg.missed.scores[1], tick: msg.missed.tick })
           : null;
         this.handlers['resumed']?.(msg);
         break;

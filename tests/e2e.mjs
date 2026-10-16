@@ -69,15 +69,21 @@ const wsOfflineNoise = /^WebSocket connection to 'ws:\/\/localhost:\d+\/ws' fail
 // StarHermit platform mocks for the signed-in pass; standalone passes must
 // make no /api call (apiLog is checked after each of them).
 const apiLog = [];
+// Platform state the Language pass reads back.
+const mock = { language: 'en', settings: {}, reports: [] };
 function platformMock(req, res, p) {
   apiLog.push(`${req.method} ${p}`);
   const json = (b, st = 200) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(b === null ? '' : JSON.stringify(b)); };
+  const body = (fn) => { let b = ''; req.on('data', (c) => { b += c; }); req.on('end', () => fn(JSON.parse(b || '{}'))); };
+  if (p === '/api/v1/me/language') return json({ preferredLanguage: mock.language });
+  if (/\/settings\/[^/]+$/.test(p) && req.method === 'PUT') return body((b) => { mock.settings[p.split('/').pop()] = b.value; json({}); });
+  if (/\/reports$/.test(p) && req.method === 'POST') return body((b) => { mock.reports.push(b); json({ id: 'r1', kind: 'bug', status: 'open', createdAt: new Date().toISOString() }, 201); });
   if (p.endsWith('/profile')) return json({ username: 'raw_user', nickname: p.includes('friend-1') ? 'Puck Pal' : 'Neon Ace' });
-  if (p.endsWith('/games/glow-test/settings') && req.method === 'GET') return json({ settings: { volumeMusic: 0.25 } });
+  if (p.endsWith('/games/glow-test/settings') && req.method === 'GET') return json({ settings: { volumeMusic: 0.25, ...mock.settings } });
   if (p.endsWith('/games/glow-test/settings')) return json({ settings: {} });
   if (p.endsWith('/games/glow-test/controls')) return json(req.method === 'GET' ? { actions: [{ action: 'hint', codes: ['KeyG'] }] } : {});
   if (p.endsWith('/cloud-saves/game:glow-test/info')) return json({ exists: false });
-  if (p.endsWith('/cloud-saves/game:glow-test')) return json({});
+  if (p.endsWith('/cloud-saves/game:glow-test')) return json(req.method === 'PUT' ? { etag: '"v' + apiLog.length + '"' } : {});
   if (p === '/api/v1/me/friends') return json([{ userId: 'friend-1', username: 'raw_friend', online: true }]);
   if (p === '/api/v1/realtime/rooms/invites') return json([{ id: 'inv-9', fromUserId: 'friend-1' }]);
   if (p === '/api/v1/realtime/rooms/invites/inv-9/decline') return json({});
@@ -700,6 +706,98 @@ async function signedInPass(browser, base) {
   return errors;
 }
 
+// Language: with the StarHermit preferred language fr-CA, Automatic resolves
+// to fr-CA; choosing Italian in Settings re-renders in place and saves
+// ui.language; Report a problem posts a bug report; German fits the viewport;
+// a journey match keeps its session when the language changes from the pause menu.
+async function languagePass(browser, base, label, viewport, hasTouch) {
+  const { context, page, errors, step } = await newPassPage(browser, label + ' language', viewport, hasTouch);
+  const pic = (stage) => `${process.env.SHOT_DIR || '/tmp'}/glow-strikers-e2e-${stage}-${label}.png`;
+  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const token = 'h.' + b64u({ sub: 'user-12345678-abcd', game_scope: 'glow-test', exp: Math.floor(Date.now() / 1000) + 3600 }) + '.s';
+  const fits = () => page.evaluate(() => {
+    if (document.documentElement.scrollWidth > window.innerWidth + 1) return 'page scrolls sideways';
+    const bad = [...document.querySelectorAll('#screens button, #screens h2, #screens h3, #screens label, #screens p, #hud span, #hud div')].find((el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !el.offsetParent || el.closest('.game-options-controls')) return false;
+      return r.right > window.innerWidth + 1 || r.left < -1;
+    });
+    return bad ? 'cut off: ' + bad.textContent.trim().slice(0, 80) : '';
+  });
+  const button = (text) => page.locator('#screens button:visible', { hasText: text }).first();
+  if (process.env.E2E_TRACE) page.on('console', (m) => console.log('  [page]', m.text()));
+  mock.language = 'fr-CA'; mock.settings = {}; mock.reports = [];
+  try {
+    await step('Language: Automatic follows the StarHermit preferred language; live switch mid-match; ui.language; report a problem', async () => {
+      await page.goto('about:blank');
+      await page.goto(`${base}/#game_token=${token}`, { waitUntil: 'load' });
+      await page.waitForSelector('#screen-title', { timeout: 15000 });
+      await page.waitForFunction(() => document.documentElement.lang === 'fr-CA', null, { timeout: 15000 });
+      await page.waitForFunction(() => document.querySelector('.title-sub')?.textContent === 'Défendez votre but. Frappez la lumière.');
+      await button('Paramètres').click();
+      const choice = page.locator('[data-game-language="choice"]');
+      await choice.scrollIntoViewIfNeeded();
+      const auto = await choice.locator('option').first().textContent();
+      if (!/^Automatique — Français \(Canada\)$/.test(auto)) throw new Error('Automatic label not resolved: ' + auto);
+      const select = await choice.elementHandle();
+      await choice.selectOption('it-IT');
+      await page.waitForFunction(() => document.documentElement.lang === 'it-IT');
+      await page.waitForFunction(() => /Salvato/.test(document.querySelector('[data-game-language="status"]').textContent));
+      if (mock.settings['ui.language']?.choice !== 'it-IT') throw new Error('ui.language not saved: ' + JSON.stringify(mock.settings));
+      const heads = await page.evaluate(() => [...document.querySelectorAll('#screens h2, #screens h3')].map((n) => n.textContent).join('|'));
+      if (!/Impostazioni/.test(heads) || !/Grafica/.test(heads) || !/Comandi/.test(heads)) throw new Error('settings not re-rendered: ' + heads);
+      if (!await select.evaluate((n) => n.isConnected)) throw new Error('shared Language select was redrawn');
+      await page.locator('[data-game-report="title"]').scrollIntoViewIfNeeded();
+      await page.fill('[data-game-report="title"]', 'Test report');
+      await page.click('[data-game-report="send"]');
+      await page.waitForFunction(() => /Grazie/.test(document.querySelector('[data-game-report="status"]').textContent));
+      if (mock.reports[0]?.kind !== 'bug') throw new Error('report not posted: ' + JSON.stringify(mock.reports));
+      await page.screenshot({ path: pic('language') });
+      await choice.selectOption('de-DE');
+      await page.waitForFunction(() => document.documentElement.lang === 'de-DE');
+      let fit = await fits();
+      if (fit) throw new Error('German settings: ' + fit);
+      await page.screenshot({ path: pic('language-de-settings'), fullPage: true });
+      await button('Zurück').click();
+      await page.waitForFunction(() => window.__gs.app.screen === 'title');
+      fit = await fits();
+      if (fit) throw new Error('German title: ' + fit);
+      await page.screenshot({ path: pic('language-de-title'), fullPage: true });
+      // A journey match keeps its session across a language change from its pause menu.
+      await page.locator('#screens button:visible', { hasText: /^Reise/ }).first().click();
+      await page.locator('.list-item:not([disabled])').first().click();
+      await button('Starten').click();
+      await page.waitForFunction(() => window.__gs.app.screen === 'playing');
+      await page.waitForFunction(() => /Wer zuerst 5 hat/.test(document.getElementById('hud-objective').textContent));
+      fit = await fits();
+      if (fit) throw new Error('German HUD: ' + fit);
+      await page.screenshot({ path: pic('language-de-hud') });
+      await page.evaluate(() => { window.__sameMatch = window.__gs.app.session; });
+      await page.click('#btn-pause');
+      await button('Einstellungen').click();
+      await choice.scrollIntoViewIfNeeded();
+      await choice.selectOption('fr-FR');
+      await page.waitForFunction(() => document.documentElement.lang === 'fr-FR');
+      await button('Retour').click();
+      await button('Reprendre').click();
+      await page.waitForFunction(() => window.__gs.app.screen === 'playing');
+      await page.waitForFunction(() => /Premier à 5/.test(document.getElementById('hud-objective').textContent));
+      if (!await page.evaluate(() => window.__sameMatch === window.__gs.app.session)) throw new Error('the match restarted on a language change');
+      if (await page.getAttribute('#btn-pause', 'aria-label') !== 'Mettre en pause') throw new Error('static label not re-translated');
+      await page.click('#btn-pause');
+      await button('Paramètres').click();
+      await choice.scrollIntoViewIfNeeded();
+      await choice.selectOption('auto');
+      await page.waitForFunction(() => document.documentElement.lang === 'fr-CA');
+      if (mock.settings['ui.language']?.choice !== 'auto') throw new Error('auto not saved');
+    });
+  } finally {
+    mock.language = 'en';
+    await context.close();
+  }
+  return errors;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -718,20 +816,28 @@ try {
   });
 
   server.on('upgrade', acceptRealtimeUpgrade);
-  allErrors.push(...await desktopPass(browser, base));
+  // E2E_PASSES=desktop,mobile,signed-in,language (default: all) picks passes.
+  const passes = new Set((process.env.E2E_PASSES || 'desktop,mobile,signed-in,language').split(','));
+  if (passes.has('desktop')) allErrors.push(...await desktopPass(browser, base));
   if (allErrors.length) {
     throw new Error('page errors after desktop pass:\n' + allErrors.join('\n'));
   }
-  allErrors.push(...await mobilePass(browser, base));
+  if (passes.has('mobile')) allErrors.push(...await mobilePass(browser, base));
   if (allErrors.length) {
     throw new Error('page errors:\n' + allErrors.join('\n'));
   }
   if (apiLog.length) throw new Error('standalone passes made platform calls: ' + apiLog.join(', '));
-  allErrors.push(...await signedInPass(browser, base));
+  if (passes.has('signed-in')) allErrors.push(...await signedInPass(browser, base));
+  if (allErrors.length) throw new Error('page errors:\n' + allErrors.join('\n'));
+  if (passes.has('language')) {
+    allErrors.push(...await languagePass(browser, base, 'desktop', { width: 1280, height: 800 }, false));
+    allErrors.push(...await languagePass(browser, base, 'mobile', { width: 390, height: 844 }, true));
+  }
   if (allErrors.length) throw new Error('page errors:\n' + allErrors.join('\n'));
   console.log('\nE2E PASS — glow-strikers, desktop + mobile, no page errors');
 } catch (e) {
   console.error(`\nE2E FAIL — ${e.message ?? e}`);
+  if (process.env.E2E_TRACE) console.error(e.stack);
   process.exitCode = 1;
 } finally {
   if (browser) await browser.close().catch(() => {});
