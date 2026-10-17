@@ -200,12 +200,14 @@ body.reduced-motion #hud-banner { text-shadow: none; }
   justify-content: center;
   padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right))
            calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
-  background: rgba(4, 6, 16, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgba(4, 6, 16, 0.72);
   pointer-events: auto;
   overflow-y: auto;
 }
 .screen[hidden] { display: none; }
+/* Frosted glass over the live 3D view only where the graphics budget allows it (High/Ultra): a
+   backdrop blur is re-composited every frame the scene moves. */
+body.gfx-hud-blur .screen { background: rgba(4, 6, 16, 0.55); backdrop-filter: blur(6px); }
 body.reduced-motion .screen { backdrop-filter: none; }
 
 .panel {

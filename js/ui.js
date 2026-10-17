@@ -594,7 +594,7 @@ export class UI {
     const refreshSummary = () => {
       const i = info();
       const sum = section.querySelector('#gfx-summary');
-      if (sum) sum.textContent = `${i.gpu || L.gpuUnknown} · ${i.summary}`;
+      if (sum) sum.textContent = `${i.gpu || L.gpuUnknown} · ${L.level.replace('{level}', i.level ?? 0)} · ${i.summary}`;
       const note = section.querySelector('#gfx-note');
       if (note) note.hidden = !i.postFailed;
     };

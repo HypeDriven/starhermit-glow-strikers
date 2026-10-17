@@ -377,6 +377,8 @@ async function graphicsSteps(page, step, base, label, VW) {
     const autoLabel = await page.locator('#gfx-preset option[value="auto"]').textContent();
     if (!/Auto \(detected: Low\)/.test(autoLabel)) throw new Error(`auto label: ${autoLabel}`);
     if (await canvasPreset() !== 'low') throw new Error(`canvas preset ${await canvasPreset()}`);
+    // The summary names the StarHermit hardware level (software GPU = level 0).
+    if (!/Level 0/.test(await summary())) throw new Error(`summary lacks the hardware level: ${await summary()}`);
     const box = await page.locator('#gfx-section').boundingBox();
     if (!box || box.x < 0 || box.x + box.width > VW + 1) throw new Error('graphics section cut off: ' + JSON.stringify(box));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

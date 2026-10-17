@@ -16,7 +16,7 @@ import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { TABLE_W, TABLE_H, MALLET_R, PUCK_R, GOAL_W, MAX_PUCK_SPEED, PHASE } from './rules.js';
 import { themeById } from './content.js';
-import { resolve, describe, detectPreset, shortGpu, SHADOW_MAP, PARTICLE_BUDGET } from './gfx.js';
+import { resolve, describe, detectLevel, presetForLevel, shortGpu, SHADOW_MAP, particleBudget, MAX_MOTES, MAX_PARTICLES } from './gfx.js';
 
 // World mapping: table (x,y) -> world (x - W/2, 0, y - H/2). Player 0 at -z.
 export function toWorld(x, y) { return [x - TABLE_W / 2, y - TABLE_H / 2]; }
@@ -35,7 +35,7 @@ export const CAMERA = {
 };
 
 const LAYER_ENV = 0, LAYER_GAME = 1, LAYER_FX = 2, LAYER_UI = 3;
-const MOTES = 180;
+const MOTES = MAX_MOTES; // pool size; the preset budget sets how many are drawn
 
 // Colour grade + vignette, applied after OutputPass (display-space in and out).
 const GradeShader = {
@@ -59,6 +59,15 @@ const GradeShader = {
       gl_FragColor = vec4(c, src.a);
     }`,
 };
+
+// Run a post pass at a fraction of the frame (per-preset budget). EffectComposer sizes every pass to the
+// full frame in addPass/setSize, so the pass's own setSize is wrapped to apply the scale.
+function atScale(pass, k) {
+  if (!(k > 0 && k < 1)) return pass;
+  const setSize = pass.setSize.bind(pass);
+  pass.setSize = (w, h) => setSize(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)));
+  return pass;
+}
 
 export class Renderer {
   constructor(canvas, settings) {
@@ -92,8 +101,12 @@ export class Renderer {
     const gl = this.renderer.getContext();
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     this.gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
-    const mobile = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) || !!window.matchMedia?.('(pointer: coarse)').matches;
-    this.detected = detectPreset(this.gpu, { mobile });
+    // StarHermit hardware level → Auto preset (SwiftShader = level 0 → Low; phones cap at Balanced).
+    const G = globalThis.StarHermitGpu;
+    const system = G ? G.detectSystem() : {};
+    const mobile = !!system.mobile || /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) || !!window.matchMedia?.('(pointer: coarse)').matches;
+    this.level = detectLevel(this.gpu, { ...system, mobile });
+    this.detected = presetForLevel(this.level);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, 1, 900);
@@ -142,7 +155,7 @@ export class Renderer {
 
   _buildParticles() {
     // Pooled particle system: fixed buffers, zero per-frame allocation.
-    const MAX = PARTICLE_BUDGET.high;
+    const MAX = MAX_PARTICLES; // pool for the largest budget; particleBudget caps live bursts
     this.pMax = MAX;
     this.pCount = 0;
     this.pPos = new Float32Array(MAX * 3);
@@ -191,7 +204,7 @@ export class Renderer {
 
   _updateMotes(t) {
     const p = this.motes.geometry.attributes.position.array, s = this.moteSeed;
-    for (let i = 0; i < MOTES; i++) {
+    for (let i = 0; i < (this.moteCount ?? MOTES); i++) {
       const a = s[i * 3] + t * 0.03, r = s[i * 3 + 1];
       const y = ((s[i * 3 + 2] + t * 0.025) % 1) * 90 - 4;
       p[i * 3] = Math.cos(a) * r * 0.75;
@@ -233,18 +246,29 @@ export class Renderer {
     this.scene.fog = new THREE.Fog(t.bg, 260, 560);
     this.motes.material.color.set(t.rail);
 
-    // Detailed tier: physical materials with clearcoat. Plain tier: cheaper standard materials.
+    // Material class from the preset budget: clearcoated physical materials on High/Ultra with detail on,
+    // standard materials otherwise, Lambert on Low (same colours and maps, no PBR lighting).
+    const b = q.budget;
+    const lambert = b.material === 'lambert';
+    const physical = detailed && b.material === 'physical';
+    const lam = (o) => new THREE.MeshLambertMaterial({ color: o.color, map: o.map || null, emissive: o.emissive ?? 0x000000, emissiveMap: o.emissiveMap || null, emissiveIntensity: o.emissiveIntensity ?? 1 });
     const phys = (color, opts = {}) => {
       const o = { color, roughness: 0.4, metalness: 0.4, envMapIntensity: 0.5, ...opts };
-      if (detailed) return new THREE.MeshPhysicalMaterial(o);
+      if (lambert) return lam(o);
+      if (physical) return new THREE.MeshPhysicalMaterial(o);
       delete o.clearcoat; delete o.clearcoatRoughness;
       return new THREE.MeshStandardMaterial(o);
     };
-    const glow = (color, intensity = 2.2) => new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: color, emissiveIntensity: intensity, roughness: 0.4, metalness: 0.1, envMapIntensity: 0.2 });
+    const glow = (color, intensity = 2.2) => lambert
+      ? lam({ color: 0x0a0a0a, emissive: color, emissiveIntensity: intensity })
+      : new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: color, emissiveIntensity: intensity, roughness: 0.4, metalness: 0.1, envMapIntensity: 0.2 });
+    // Round-geometry LOD from the preset budget (at least 6 segments).
+    const seg = (n) => Math.max(6, Math.round(n * b.segments));
 
     // Environment floor: an emissive neon grid on the detailed tier.
     const floorGeo = new THREE.PlaneGeometry(1000, 1000);
-    const floorMat = new THREE.MeshStandardMaterial({ color: t.floor, roughness: 0.85, metalness: 0.15, envMapIntensity: 0.15 });
+    const floorMat = lambert ? new THREE.MeshLambertMaterial({ color: t.floor })
+      : new THREE.MeshStandardMaterial({ color: t.floor, roughness: 0.85, metalness: 0.15, envMapIntensity: 0.15 });
     if (detailed) {
       const grid = gridTexture(t.rail);
       grid.repeat.set(50, 50);
@@ -274,9 +298,9 @@ export class Renderer {
     // Ring of glowing-capped pillars (detailed tier).
     this.pillarCaps = [];
     if (detailed) {
-      const n = 16;
-      const pilGeo = new THREE.CylinderGeometry(2.2, 2.8, 60, 12);
-      const capGeo = new THREE.CylinderGeometry(2.6, 2.6, 2, 12);
+      const n = b.pillars;
+      const pilGeo = new THREE.CylinderGeometry(2.2, 2.8, 60, seg(12));
+      const capGeo = new THREE.CylinderGeometry(2.6, 2.6, 2, seg(12));
       disp.push(pilGeo, capGeo);
       const pilMat = phys(t.table, { roughness: 0.55, metalness: 0.6 });
       for (let i = 0; i < n; i++) {
@@ -301,7 +325,7 @@ export class Renderer {
 
     // Playing surface: glossy clearcoat with authored markings; the markings
     // also drive a faint emissive map so they read on every tier.
-    const { map, glowMap } = surfaceTextures(t, detailed, this.renderer.capabilities.getMaxAnisotropy());
+    const { map, glowMap } = surfaceTextures(t, detailed, this.renderer.capabilities.getMaxAnisotropy(), detailed ? b.surface : 256);
     disp.push(map, glowMap);
     const surf = new THREE.Mesh(new THREE.PlaneGeometry(TABLE_W, TABLE_H), phys(0xffffff, {
       map, emissiveMap: glowMap, emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.7,
@@ -348,10 +372,10 @@ export class Renderer {
 
     // Puck: glossy disc with a luminous rim so it always reads against the table.
     const puckMat = phys(t.puck, { emissive: t.puck, emissiveIntensity: 0.3, roughness: 0.3, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.2, envMapIntensity: 0.3 });
-    this.puckMesh = new THREE.Mesh(new THREE.CylinderGeometry(PUCK_R, PUCK_R, 1.6, 32), puckMat);
+    this.puckMesh = new THREE.Mesh(new THREE.CylinderGeometry(PUCK_R, PUCK_R, 1.6, seg(32)), puckMat);
     this.puckMesh.position.y = 0.8;
     this.puckMesh.castShadow = true;
-    const puckRim = new THREE.Mesh(new THREE.TorusGeometry(PUCK_R - 0.35, 0.3, 8, 32), glow(t.rail, 1.6));
+    const puckRim = new THREE.Mesh(new THREE.TorusGeometry(PUCK_R - 0.35, 0.3, seg(8), seg(32)), glow(t.rail, 1.6));
     puckRim.rotation.x = Math.PI / 2;
     puckRim.position.y = 0.82;
     this.puckMesh.add(puckRim);
@@ -376,18 +400,18 @@ export class Renderer {
     for (const i of [0, 1]) {
       const color = i === 0 ? t.mallet0 : t.mallet1;
       const grp = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(MALLET_R, MALLET_R * 0.85, 2.6, 36),
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(MALLET_R, MALLET_R * 0.85, 2.6, seg(36)),
         phys(color, { roughness: 0.35, metalness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.25, envMapIntensity: 0.25 }));
       body.position.y = 1.3;
       body.castShadow = true;
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(MALLET_R - 0.4, 0.55, 12, 40), glow(color, 2.6));
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(MALLET_R - 0.4, 0.55, seg(12), seg(40)), glow(color, 2.6));
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.5;
-      const handle = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 3.4, 20),
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 3.4, seg(20)),
         phys(0x181c2c, { roughness: 0.35, metalness: 0.7, clearcoat: 0.6 }));
       handle.position.y = 4.2;
       handle.castShadow = true;
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.3, 20), glow(color, 1.4));
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.3, seg(20)), glow(color, 1.4));
       cap.position.y = 6.0;
       grp.add(body, ring, handle, cap);
       grp.traverse(o => o.layers.set(LAYER_GAME));
@@ -399,12 +423,12 @@ export class Renderer {
     // Obstacles.
     this.obstacleMeshes = [];
     for (const o of obstacles) {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.15, 2.8, 24),
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(o.r, o.r * 1.15, 2.8, seg(24)),
         phys(0x1a2038, { roughness: 0.3, metalness: 0.7, clearcoat: 0.6 }));
       const [wx, wz] = toWorld(o.x, o.y);
       m.position.set(wx, 1.4, wz);
       m.castShadow = true;
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(o.r - 0.3, 0.5, 8, 28), glow(t.accent, 1.8));
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(o.r - 0.3, 0.5, seg(8), seg(28)), glow(t.accent, 1.8));
       rim.rotation.x = Math.PI / 2;
       rim.position.y = 1.2;
       m.add(rim);
@@ -444,7 +468,8 @@ export class Renderer {
     if (key === this._gfxJson) return;
     this._gfxJson = key;
     const prev = this.q;
-    const g = this.q = resolve(saved, this.detected);
+    const g = this.q = resolve(saved, this.detected, this.level);
+    const b = g.budget, pb = prev?.budget || {};
 
     const size = SHADOW_MAP[g.shadows];
     this.renderer.shadowMap.enabled = size > 0;
@@ -455,8 +480,12 @@ export class Renderer {
       this.key.shadow.map = null;
     }
     this.scene.environment = g.reflections === 'on' ? this._envTexture() : null;
-    this.particleBudget = PARTICLE_BUDGET[g.particles];
+    this.particleBudget = particleBudget(g.particles, b);
     this.motes.visible = g.particles === 'high';
+    this.moteCount = b.motes;
+    this.motes.geometry.setDrawRange(0, b.motes);
+    // Frosted backdrop blur behind menu screens only where the budget allows it (High/Ultra).
+    document.body.classList.toggle('gfx-hud-blur', !!b.hudBlur);
     this.adaptiveScale = 1;
     this._frames = [];
     this.postKey = null;
@@ -464,7 +493,8 @@ export class Renderer {
     this._fpsVisible(g.showFps);
     this.canvas.dataset.gfxPreset = g.preset;
 
-    if (this._arenaArgs && prev && prev.detail !== g.detail) this.buildArena(...this._arenaArgs);
+    const assets = pb.material !== b.material || pb.surface !== b.surface || pb.segments !== b.segments || pb.pillars !== b.pillars;
+    if (this._arenaArgs && prev && (prev.detail !== g.detail || assets)) this.buildArena(...this._arenaArgs);
     else this._applyShadowFlags();
   }
 
@@ -478,6 +508,7 @@ export class Renderer {
     const px = [Math.round(this.size[0] * this.pixelRatio), Math.round(this.size[1] * this.pixelRatio)];
     return {
       gpu: shortGpu(this.gpu),
+      level: this.level,
       detected: this.detected,
       resolved: this.q,
       summary: describe(this.q, px),
@@ -518,7 +549,7 @@ export class Renderer {
       composer.setSize(w, h);
       composer.addPass(new RenderPass(this.scene, this.camera));
       if (g.ao !== 'off') {
-        const ao = new GTAOPass(this.scene, this.camera, w * pr, h * pr);
+        const ao = atScale(new GTAOPass(this.scene, this.camera, w * pr, h * pr), g.budget.aoRes);
         ao.output = GTAOPass.OUTPUT.Default;
         ao.blendIntensity = 0.7;
         ao.updateGtaoMaterial({ radius: 6, distanceExponent: 1.5, thickness: 3, scale: 1, samples: g.ao === 'high' ? 16 : 8 });
@@ -527,7 +558,7 @@ export class Renderer {
       }
       if (g.bloom === 'on') {
         // High threshold: only HDR emissives (rails, rings, strips) and hot highlights bloom.
-        composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), (this.theme?.bloom ?? 0.8) * 0.75, 0.5, 0.9));
+        composer.addPass(atScale(new UnrealBloomPass(new THREE.Vector2(w, h), (this.theme?.bloom ?? 0.8) * 0.75, 0.5, 0.9), g.budget.bloomRes));
       }
       composer.addPass(new OutputPass());
       if (g.grade === 'on') composer.addPass(new ShaderPass(GradeShader));
@@ -850,8 +881,8 @@ function gridTexture(color) {
  * Playing-surface textures: a colour map (base tone, sheen, air-hole grid and
  * subtle noise on the detailed tier) and a markings-only emissive map.
  */
-function surfaceTextures(t, detailed, maxAniso) {
-  const W = detailed ? 512 : 256, H = W * 2, k = W / 256;
+function surfaceTextures(t, detailed, maxAniso, size = detailed ? 512 : 256) {
+  const W = size, H = W * 2, k = W / 256; // width from the preset budget (`surface`)
   const base = document.createElement('canvas');
   base.width = W; base.height = H;
   const ctx = base.getContext('2d');
