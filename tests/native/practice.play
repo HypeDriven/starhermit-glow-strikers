@@ -1,0 +1,31 @@
+# Practice (the Club difficulty) through its setup; undo, hint, the board
+# state panel and the camera reset in a running match; Restart from pause;
+# Leave Match back to the title.
+until 300 Daily Challenge
+frames 10
+click =Practice
+until 60 Difficulty
+frames 10
+click Start
+frames 260
+hold ArrowLeft
+frames 20
+release ArrowLeft
+key KeyH 2
+key KeyB 2
+frames 40
+expect Puck at column
+save practice-board
+key KeyZ 2
+key KeyC 2
+frames 30
+key Escape 2
+until 60 =Paused
+frames 10
+click =Restart
+frames 60
+key Escape 2
+until 60 =Paused
+frames 10
+click Leave Match
+until 60 Daily Challenge

@@ -1,0 +1,27 @@
+# Learn: "Move the mallet" (travel 40 units with the arrow keys once the
+# countdown ends) to its results, then Next: "Strike the puck" (the puck
+# waits at row 70 straight ahead: push up into it) to its results.
+until 300 Daily Challenge
+frames 10
+click =Learn
+until 60 One rule at a time
+frames 10
+click Move the mallet
+until 30 Move it 40 units
+frames 200
+hold ArrowUp
+frames 40
+release ArrowUp
+until 200 =Lesson complete
+frames 10
+save lesson-move
+click Next: Strike the puck
+frames 200
+hold ArrowUp
+frames 60
+release ArrowUp
+until 200 =Lesson complete
+frames 10
+save lesson-strike
+click Menu
+until 60 Daily Challenge

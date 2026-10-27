@@ -1,0 +1,26 @@
+# Challenges › Blitz Clock (first to 3, a 60-second clock, no overtime) played
+# to the end with the mallet parked and a pause on the way: the match ends on
+# the clock or the AI's third goal, and the results show the breakdown.
+until 300 Daily Challenge
+frames 10
+click Challenges
+until 60 Constrained goals
+frames 10
+click Blitz Clock
+until 60 Start
+expect 1 min max
+frames 10
+click Start
+frames 600
+save blitz-play
+key Escape 2
+until 60 =Paused
+frames 10
+save blitz-pause
+click Resume
+until 4400 Rail bounces
+frames 10
+save blitz-results
+expect Retry
+click Menu
+until 60 Daily Challenge

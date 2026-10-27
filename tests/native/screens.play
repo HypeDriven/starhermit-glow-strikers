@@ -1,0 +1,61 @@
+# Every menu screen from the title and back: Journey, Challenges, Learn,
+# Settings (the palette select and the Options note), How to Play,
+# Achievements, Leaderboards and the Hosted Play lobby (signed out: sign in).
+until 300 Daily Challenge
+frames 10
+save title
+click Journey
+until 60 Forty authored
+frames 10
+save journey
+click =Back
+until 60 Daily Challenge
+frames 10
+click Challenges
+until 60 Constrained goals
+frames 10
+save challenges
+click =Back
+until 60 Daily Challenge
+frames 10
+click =Learn
+until 60 One rule at a time
+frames 10
+click =Back
+until 60 Daily Challenge
+frames 10
+click Settings
+until 60 StarHermit Options
+expect palette
+frames 10
+save settings
+click =Back
+until 60 Daily Challenge
+frames 5
+click How to Play
+until 60 Defend the glowing
+frames 10
+save help
+click =Back
+until 60 Daily Challenge
+frames 5
+click Achievements
+until 60 Century of Light
+frames 10
+save achievements
+click =Back
+until 60 Daily Challenge
+frames 5
+click Leaderboards
+until 60 Personal best — journey
+frames 10
+save leaderboards
+click =Back
+until 60 Daily Challenge
+frames 5
+click Hosted Play
+until 60 sign in to create
+frames 10
+save lobby
+click =Back
+until 60 Daily Challenge
