@@ -20,6 +20,7 @@ import { ACHIEVEMENTS, CHALLENGES, JOURNEY, LESSONS, dailyConfig } from "../js/c
 import { TERMINAL } from "../js/rules.js";
 import { PALETTES } from "../js/progress.js";
 import { P, T } from "./i18n.ts";
+import * as audio from "./audio.ts";
 import * as platform from "./platform.ts";
 import {
   DIFFICULTIES, MECHANICS, app, begin, doUndo, canUndo, cfgName, closeOverlay, goTitle, hosted, leaveMatch, next, openChallenge,
@@ -62,8 +63,10 @@ function button(b: Btn, width: number | null = null): void {
       }
     }, { width: inner, align: "center", spacing: 1 });
   }
-  if (ui.style(...style, s).id(b.id).button(b.text, opts)) b.act();
+  if (ui.style(...style, s).id(b.id).button(b.text, opts)) { tap(b.id); b.act(); }
 }
+/** The browser build's UI tap on every action (the quieter back tap for Back, Leave and Menu). */
+function tap(id: string): void { audio.event(/back|leave|menu/i.test(id) ? "ui-back" : "ui"); }
 /** Buttons at their own widths in rows that wrap at `width` (CSS flex-wrap), each row stretched to the width. */
 function flow(label: string, list: Btn[], width: number, gap = 10): void {
   const rows: Btn[][] = [[]];
@@ -172,7 +175,7 @@ function hud(L: Layout): void {
     }, { spacing: 6, align: "center" });
   });
   ui.place("hud-pause", { anchor: "top-end", x: m, y: 8 }, () => {
-    if (ui.style("hud-btn", { width: pauseW }).id("btn-pause").button(T("Pause game"), { content: () => { ui.style("body", { text: { weight: "700" } }).label("II"); } })) pauseGame();
+    if (ui.style("hud-btn", { width: pauseW }).id("btn-pause").button(T("Pause game"), { content: () => { ui.style("body", { text: { weight: "700" } }).label("II"); } })) { tap("pause"); pauseGame(); }
   });
   // Banner.
   if (app.banner || (app.mode === "hosted" && hosted.cur?.ph === "waiting")) {
@@ -192,7 +195,7 @@ function hud(L: Layout): void {
   const left = !!settings.leftHanded;
   ui.place("hud-actions", { anchor: left ? "bottom-start" : "bottom-end", x: m, y: 8 }, () => {
     ui.row("hud-actions-row", () => {
-      for (const b of acts) if (ui.style(...b.style!).id(b.id).button(b.text, b.id === "btn-boardstate" ? { selected: app.boardState } : {})) { b.act(); ui.setFocus(null); }
+      for (const b of acts) if (ui.style(...b.style!).id(b.id).button(b.text, b.id === "btn-boardstate" ? { selected: app.boardState } : {})) { tap(b.id); b.act(); ui.setFocus(null); }
     }, { spacing: 8, align: "end" });
   });
   if (app.budget) {
@@ -341,7 +344,7 @@ function listItem(id: string, label: string, w: number, opts: { title: string; s
       }, { spacing: 8, align: "center", width: inner });
     },
   });
-  if (clicked && !opts.disabled) opts.act();
+  if (clicked && !opts.disabled) { tap(id); opts.act(); }
 }
 function backFooter(id: string): () => void {
   return () => { button({ id, text: T("Back"), act: back }, null); };
