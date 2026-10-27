@@ -8,35 +8,34 @@ import { Session } from '../js/session.js';
 import { createAI } from '../js/ai.js';
 import { validateContent, JOURNEY, CHALLENGES, dailyConfig, dailySeed, THEMES, LESSONS } from '../js/content.js';
 import { RngStream, hashValue } from '../js/rng.js';
-import { Platform } from '../js/platform.js';
-import { HostedClient } from '../js/net.js';
 import { RULESET_ID, CONTENT_VERSION } from '../js/content.js';
+import { defaultSave, submitResult } from '../js/progress.js';
 
 test('local boards accept mastery totals and signed match scores within their limits', () => {
-  const platform = new Platform();
-  platform.persist = () => {};
+  const save = defaultSave();
   const base = { ruleset: RULESET_ID, contentVersion: CONTENT_VERSION, durationTicks: 6000, boardKey: 'mastery' };
   for (const [board, score] of [['journey', 2900], ['journey', -100], ['daily', -5], ['challenge', 45]]) {
-    assert.equal(platform.submitResult(board, { ...base, score })?.score, score);
+    assert.equal(submitResult(save, board, { ...base, score }, '2026-01-01T00:00:00Z')?.score, score);
   }
   for (const [board, score] of [['journey', 3001], ['daily', 100], ['unknown', 5]]) {
-    assert.equal(platform.submitResult(board, { ...base, score }), null);
+    assert.equal(submitResult(save, board, { ...base, score }, '2026-01-01T00:00:00Z'), null);
   }
 });
 
-test('hosted snapshots retain both scores above 15 separately from phase', () => {
-  const client = new HostedClient();
-  const frame = new ArrayBuffer(32);
-  const view = new DataView(frame);
-  view.setUint8(0, 2);
-  view.setUint32(1, 123, true);
-  view.setUint8(29, 18);
-  view.setUint8(30, 21);
-  view.setUint8(31, 3);
-  client._onMessage({ data: frame });
-  assert.deepEqual(client.snap.scores, [18, 21]);
-  assert.equal(client.snap.phase, 'terminal');
-  assert.equal(client.snap.tick, 123);
+test('the AI resumes exactly from its saved memory (the server script keeps none between ticks)', () => {
+  const a = rules.createMatch({ seed: 77 }), b = rules.createMatch({ seed: 77 });
+  const ai = createAI({ skill: 0.6, player: 1, seed: 77 });
+  let saved = createAI({ skill: 0.6, player: 1, seed: 77 }).save();
+  for (let i = 0; i < 3000 && a.phase !== rules.PHASE.TERMINAL; i++) {
+    const t1 = ai.update(a);
+    const resumed = createAI({ skill: 0.6, player: 1, seed: 77, saved });
+    const t2 = resumed.update(b);
+    saved = resumed.save();
+    assert.deepEqual(t2, t1);
+    if (t1) { rules.applyCommand(a, rules.makeCommand(1, 'move', t1)); rules.applyCommand(b, rules.makeCommand(1, 'move', t2)); }
+    rules.step(a); rules.step(b);
+  }
+  assert.equal(rules.hash(a), rules.hash(b));
 });
 
 const T = rules;

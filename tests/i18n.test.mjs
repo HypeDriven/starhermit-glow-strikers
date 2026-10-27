@@ -1,62 +1,77 @@
-// Localization coverage: every English key the UI shows — index.html markup,
-// prose literals the el()-built screens, toasts, captions and statuses pass as
-// text, T('…') / N('…') keys, and the content shown through T(variable) — is
-// translated in every locale (en-GB → en-US, es-ES → es-419, fr-CA → fr-FR
-// inherit) with intact placeholders; no prose template literal bypasses T();
-// the language follows sh-language.js and switches live.
+// Localization coverage: every English key the engine client shows — the
+// T("…") literals of native/*.ts, the status and toast keys net.ts hands to
+// T(), the label tables translated through T(variable), the content shown
+// through T(variable) (journey, challenges, lessons, achievements) — is in
+// every locale's table (en-GB → en-US, es-ES → es-419, fr-CA → fr-FR inherit)
+// with its placeholders intact, and the account strings cover the nine locales.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { loadTables, codeKeys, proseLiterals, proseTemplates, markupKeys, audit, bootI18n, LOCALES } from './i18n-common.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import vm from 'node:vm';
 import { JOURNEY, CHALLENGES, LESSONS, ACHIEVEMENTS } from '../js/content.js';
+import { LOCALES } from '../js/i18n/locale.js';
+import { platformStrings, PLATFORM_LOCALES } from '../js/platform-strings.js';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
-const FILES = ['js/i18n/strings.js', 'js/i18n/strings-content.js'];
-const UI = ['js/ui.js', 'js/main.js', 'js/audio.js'];
-const CODE = [...UI, 'js/net.js', 'js/session.js', 'js/platform.js'];
+const sandbox = {};
+sandbox.globalThis = sandbox;
+vm.createContext(sandbox);
+for (const f of ['js/i18n/strings.js', 'js/i18n/strings-content.js']) vm.runInContext(read(f), sandbox);
+const TABLES = sandbox.GS_STRINGS;
+const PARENT = { 'en-GB': 'en-US', 'es-ES': 'es-419', 'fr-CA': 'fr-FR' };
+const FULL = ['es-419', 'de-DE', 'fr-FR', 'pt-BR', 'it-IT'];
 
-export function usedKeys() {
-  const keys = new Set(markupKeys(read('index.html')));
-  for (const f of CODE) codeKeys(read(f)).forEach((k) => keys.add(k));
-  // Setting keys (camelCase), the logo and glyph labels are not prose.
-  const NOT_TEXT = new Set(['GLOW STRIKERS', 'II', 'Esc']);
-  for (const f of UI) proseLiterals(read(f)).filter((k) => !/^[a-z]+[A-Z]\w*$/.test(k) && !NOT_TEXT.has(k)).forEach((k) => keys.add(k));
+// Label tables that reach T() through a variable (native/main.ts, native/screens.ts).
+const TABLE_KEYS = [
+  'strike', 'defend', 'obstacles', 'time pressure', 'move budget', 'combined',            // MECHANICS
+  'Relaxed', 'Club', 'Pro', 'Legend',                                                      // DIFFICULTIES
+  'Target score reached', 'Time limit', 'Overtime golden goal', 'Forfeit', 'Move budget exhausted', // TERMINAL_LABEL
+  'Goals', 'Shots', 'Saves', 'Steals', 'Invalid actions', 'Rail bounces', 'Fastest strike', // results rows
+  'practice', 'journey', 'daily', 'challenge', 'learn', 'hosted',                          // pause context
+  'Victory', 'Defeat', 'Draw', 'Lesson complete', 'Lesson ended',                         // headlines
+];
+
+function usedKeys() {
+  const keys = new Set(TABLE_KEYS);
+  for (const f of readdirSync(new URL('native/', ROOT))) {
+    const src = read(`native/${f}`);
+    for (const m of src.matchAll(/\bT\(\s*"((?:[^"\\]|\\.)*)"/g)) keys.add(m[1]);
+  }
+  const net = read('native/net.ts');
+  for (const m of net.matchAll(/\b(?:say|toast)\(\s*"((?:[^"\\]|\\.)*)"/g)) keys.add(m[1]);
+  for (const m of net.matchAll(/(?:say|fail)\([^;]*?\? "((?:[^"\\]|\\.)*)" : "((?:[^"\\]|\\.)*)"/g)) { keys.add(m[1]); keys.add(m[2]); }
+  for (const m of net.matchAll(/fallback = "((?:[^"\\]|\\.)*)"|fail\(e, "((?:[^"\\]|\\.)*)"\)/g)) keys.add(m[1] ?? m[2]);
   JOURNEY.forEach((s) => keys.add(s.name));
   CHALLENGES.forEach((c) => { keys.add(c.name); keys.add(c.description); });
   LESSONS.forEach((l) => { keys.add(l.title); keys.add(l.text); });
   ACHIEVEMENTS.forEach((a) => { keys.add(a.name); keys.add(a.description); });
-  return [...keys].filter((k) => /[A-Za-z]/.test(k)).sort();
+  return [...keys].filter((k) => k && /[A-Za-z]/.test(k)).sort();
+}
+
+const holes = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+function lookup(locale, key) {
+  for (let l = locale; l; l = PARENT[l]) if (TABLES[l] && Object.prototype.hasOwnProperty.call(TABLES[l], key)) return TABLES[l][key];
+  return null;
 }
 
 test('every used key is translated in every locale; placeholders intact', () => {
-  assert.deepEqual(audit(loadTables(ROOT, FILES, 'GS_STRINGS'), usedKeys()), []);
+  const keys = usedKeys();
+  assert.ok(keys.length > 150, `found ${keys.length} keys`);
+  const problems = [];
+  for (const k of keys) {
+    for (const l of FULL) {
+      const v = lookup(l, k);
+      if (v == null) problems.push(`${l}: missing "${k}"`);
+      else if (holes(v) !== holes(k)) problems.push(`${l}: placeholders of "${k}"`);
+    }
+  }
+  assert.deepEqual(problems, []);
 });
 
-test('no prose template literal bypasses T()', () => {
-  const bad = CODE.flatMap((f) => proseTemplates(read(f)).map((t) => `${f}: ${t}`))
-    .filter((t) => !/\/ws$|r…-ai-…|…:\/\/|: \?\w+=/.test(t)); // URLs and query strings
-  assert.deepEqual(bad, []);
-});
-
-test('the locale follows sh-language and switches live', () => {
-  const { I18N, events, doc } = bootI18n(ROOT, { files: ['sh-language.js', ...FILES, 'js/i18n/i18n.js'], global: 'GSI18N', event: 'gs-language', languages: ['de-DE'] });
-  assert.equal(I18N.lang, 'de-DE');
-  assert.equal(doc.documentElement.lang, 'de-DE');
-  assert.equal(I18N.T('Hosted Play'), 'Online-Spiel');
-  I18N.language.setChoice('fr-CA');
-  assert.equal(I18N.lang, 'fr-CA');
-  assert.equal(events.at(-1), 'fr-CA');
-  I18N.language.setChoice('es-ES');
-  assert.equal(I18N.T('First to {n}', { n: 5 }), 'Primero a 5');
-});
-
-test('graphics and platform strings cover all nine locales', async () => {
-  const { platformStrings, PLATFORM_LOCALES } = await import('../js/platform-strings.js');
-  const { gfxStrings } = await import('../js/gfx-strings.js');
+test('account strings cover all nine locales', () => {
   for (const l of LOCALES) {
     assert.ok(PLATFORM_LOCALES.includes(l), l);
     for (const k of Object.keys(platformStrings('en-US'))) assert.ok(platformStrings(l)[k], `${l} ${k}`);
-    assert.ok(gfxStrings(l).graphics, l);
   }
 });
