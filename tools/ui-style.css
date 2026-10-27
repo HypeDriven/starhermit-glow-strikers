@@ -1,0 +1,218 @@
+/* Glow Strikers — the browser build's css/style.css rewritten class-based for
+   `starhermit css` (npm run css → assets/ui-style.json): ids became classes,
+   nested and attribute selectors got classes of their own, the media queries
+   are layouts native/screens.ts picks by the window's size, and the
+   body.high-contrast / palette-* variants are token sets in native/style.ts. */
+
+:root {
+  --bg: #070a18;
+  --panel: rgba(13, 18, 40, 0.92);
+  --panel-solid: #0d1228;
+  --line: #2a3a66;
+  --text: #e8ecff;
+  --text-dim: #9aa6d0;
+  --accent: #38e6ff;
+  --accent-warm: #ff5c8a;
+  --accent-gold: #ffd166;
+  --danger: #ff6b6b;
+  --ok: #51ff9e;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+/* Focus rings are the runtime's (the theme's focus colour, the old 3 px accent ring);
+   CSS box-shadow rings would paint under the translucent boxes. The primary
+   button's 25 % gradient is precomposed over the solid panel colour for the same reason. */
+
+/* ---------------------------------------------------------------- HUD */
+.hud-objective {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.hud-objective-compact { font-size: 0.75rem; padding: 5px 10px; }
+.score-pill {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  min-width: 2.4em;
+  text-align: center;
+  padding: 4px 10px;
+  font-weight: 700;
+  color: var(--text);
+}
+.score-you { color: var(--accent-warm); border-color: var(--accent-warm); }
+.score-opp { color: var(--accent); border-color: var(--accent); }
+.score-clock { color: var(--text-dim); font-weight: 500; }
+.hud-banner {
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  text-shadow: 0 0 18px var(--accent);
+}
+.hud-banner-plain { text-shadow: none; }
+.hud-budget {
+  background: var(--panel);
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+.captions {
+  color: var(--text);
+  text-align: center;
+  text-shadow: 0 1px 4px #000;
+  font-size: 0.9rem;
+}
+.hud-btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 0.95rem;
+  text-align: center;
+}
+.hud-btn:hover { border-color: var(--accent); }
+.boardstate {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- screens */
+.screen { background: rgba(4, 6, 16, 0.72); }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.55);
+}
+.panel-compact { padding: 16px; }
+.panel-short { padding: 14px; }
+.h1 { font-size: 1.7rem; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+.h2 { font-size: 1.25rem; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+.h3 { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+.rail-p { color: var(--text-dim); font-size: 0.9rem; }
+.title-logo {
+  font-size: 3.2rem;
+  font-weight: 900;
+  text-align: center;
+  color: #9fb8e8;
+  letter-spacing: 0.04em;
+}
+.title-logo-compact { font-size: 2rem; }
+.title-sub { text-align: center; color: var(--text-dim); }
+.art {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.btn {
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 1rem;
+  text-align: center;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; }
+.btn-primary {
+  background: linear-gradient(135deg, #17475e, #4a2540);
+  border-color: var(--accent);
+  font-weight: 700;
+  font-size: 1.15rem;
+  min-height: 56px;
+}
+.btn-danger { border-color: var(--danger); color: var(--danger); }
+.btn-small { min-height: 40px; padding: 8px 14px; font-size: 0.9rem; }
+.btn-main { font-size: 1rem; color: var(--text); }
+.btn-main-primary { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+.btn-sub { font-size: 0.78rem; color: var(--text-dim); font-weight: 400; }
+
+.meta-cell {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.meta-b { color: var(--accent); font-size: 1.05rem; font-weight: 700; }
+.meta-t { color: var(--text); font-size: 0.85rem; }
+
+.list-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 0.95rem;
+  min-height: 44px;
+  text-align: left;
+}
+.list-item:hover { border-color: var(--accent); }
+.list-item:disabled { opacity: 0.45; }
+.list-done { border-color: var(--ok); }
+.item-t { color: var(--text); font-size: 0.95rem; }
+.item-sub { color: var(--text-dim); font-size: 0.82rem; }
+.stars { color: var(--accent-gold); font-size: 0.95rem; }
+.tag {
+  font-size: 0.72rem;
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.row-line { border-bottom: 1px solid var(--line); }
+.cell { padding: 6px 10px; font-size: 0.9rem; color: var(--text); }
+.cell-num { padding: 6px 10px; font-size: 0.9rem; color: var(--text); text-align: right; }
+.cell-head { padding: 6px 10px; font-size: 0.9rem; color: var(--text-dim); font-weight: 500; text-align: right; }
+
+.setting-row {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(42, 58, 102, 0.5);
+  min-height: 44px;
+}
+.settings-h3 {
+  color: var(--accent);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.chat-log {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.room-code { font-size: 1.4rem; font-weight: 700; color: var(--text); letter-spacing: 0.2em; }
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--accent-gold);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+.dim { color: var(--text-dim); }
+.body { color: var(--text); }
+.gold { color: var(--accent-gold); }

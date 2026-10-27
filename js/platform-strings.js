@@ -2,7 +2,7 @@
 // room invites, controls reset, sign-out notice, session-expired and
 // updated-terms dialogs) in the game language (js/i18n; window.GSI18N),
 // picked like the Graphics section (js/gfx-strings.js).
-import { pickLocale } from './gfx-strings.js';
+import { pickLocale } from './i18n/locale.js';
 
 const EN = {
   termsRequired: 'Updated terms to accept', termsRequiredBody: 'StarHermit needs you to accept its updated terms, so the room connection stopped. Go back to StarHermit to review them.', roomUnavailable: 'This room is no longer available.',
@@ -125,6 +125,6 @@ const STRINGS = {
 export const PLATFORM_LOCALES = Object.keys(STRINGS);
 
 /** Strings for the browser's locale (en-US fallback per key). */
-export function platformStrings(tag = globalThis.GSI18N?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')) {
+export function platformStrings(tag = 'en-US') {
   return { ...EN, ...(STRINGS[pickLocale(tag)] ?? {}) };
 }

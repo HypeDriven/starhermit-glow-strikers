@@ -291,7 +291,20 @@
     ['Playing as {name} · cloud save offline', 'Jugando como {name} · guardado en la nube sin conexión', 'Spielst als {name} · Cloud-Speicher offline', 'Vous jouez en tant que {name} · sauvegarde en ligne hors ligne', 'Jogando como {name} · save na nuvem offline', 'Giochi come {name} · salvataggio cloud offline'],
     ['Player {id}', 'Jugador {id}', 'Spieler {id}', 'Joueur {id}', 'Jogador {id}', 'Giocatore {id}'],
     ['Player', 'Jugador', 'Spieler', 'Joueur', 'Jogador', 'Giocatore'],
-    ['Ready', 'Listo', 'Bereit', 'Prêt', 'Pronto', 'Pronto']
+    ['Ready', 'Listo', 'Bereit', 'Prêt', 'Pronto', 'Pronto'],
+    // ---- engine client (hosted play on StarHermit rooms, the runtime's Options)
+    ['First to 5 · hosted · refereed by the StarHermit server', 'Primero a 5 · en línea · arbitrado por el servidor de StarHermit', 'Wer zuerst 5 hat · online · vom StarHermit-Server entschieden', 'Premier à 5 · en ligne · arbitré par le serveur StarHermit', 'Primeiro a 5 · online · arbitrado pelo servidor do StarHermit', 'Primo a 5 · online · arbitrato dal server StarHermit'],
+    ['Waiting for your opponent…', 'Esperando a tu rival…', 'Warte auf deinen Gegner …', 'En attente de votre adversaire…', 'Aguardando seu oponente…', 'In attesa dell’avversario…'],
+    ['Sound, graphics, language, controls and accessibility are in the StarHermit Options (F1).', 'El sonido, los gráficos, el idioma, los controles y la accesibilidad están en las Opciones de StarHermit (F1).', 'Ton, Grafik, Sprache, Steuerung und Barrierefreiheit findest du in den StarHermit-Optionen (F1).', 'Le son, les graphismes, la langue, les commandes et l’accessibilité sont dans les Options de StarHermit (F1).', 'Som, gráficos, idioma, controles e acessibilidade ficam nas Opções do StarHermit (F1).', 'Audio, grafica, lingua, comandi e accessibilità sono nelle Opzioni di StarHermit (F1).'],
+    ['Open Options', 'Abrir opciones', 'Optionen öffnen', 'Ouvrir les options', 'Abrir opções', 'Apri le opzioni'],
+    ['Hosted matches are played on StarHermit: sign in to create or join a room.', 'Las partidas en línea se juegan en StarHermit: inicia sesión para crear o unirte a una sala.', 'Online-Matches laufen über StarHermit: Melde dich an, um einen Raum zu erstellen oder beizutreten.', 'Les matchs en ligne se jouent sur StarHermit : connectez-vous pour créer un salon ou en rejoindre un.', 'As partidas online são jogadas no StarHermit: entre para criar ou entrar em uma sala.', 'Le partite online si giocano su StarHermit: accedi per creare una stanza o unirti a una.'],
+    ['That room code is not open.', 'Ese código de sala no está abierto.', 'Dieser Raumcode ist nicht offen.', 'Ce code de salon n’est pas ouvert.', 'Esse código de sala não está aberto.', 'Quel codice stanza non è aperto.'],
+    ['Starting…', 'Comenzando…', 'Startet …', 'Démarrage…', 'Começando…', 'Avvio…'],
+    ['Chat is limited to 10 messages a minute.', 'El chat está limitado a 10 mensajes por minuto.', 'Der Chat ist auf 10 Nachrichten pro Minute begrenzt.', 'Le chat est limité à 10 messages par minute.', 'O chat é limitado a 10 mensagens por minuto.', 'La chat è limitata a 10 messaggi al minuto.'],
+    ['You are already in another room. Leave it first.', 'Ya estás en otra sala. Sal de ella primero.', 'Du bist schon in einem anderen Raum. Verlasse ihn zuerst.', 'Vous êtes déjà dans un autre salon. Quittez-le d’abord.', 'Você já está em outra sala. Saia dela primeiro.', 'Sei già in un’altra stanza. Esci prima da quella.'],
+    ['Sign in to StarHermit to play hosted matches.', 'Inicia sesión en StarHermit para jugar partidas en línea.', 'Melde dich bei StarHermit an, um Online-Matches zu spielen.', 'Connectez-vous à StarHermit pour jouer des matchs en ligne.', 'Entre no StarHermit para jogar partidas online.', 'Accedi a StarHermit per giocare partite online.'],
+    ['The room closed.', 'La sala se cerró.', 'Der Raum wurde geschlossen.', 'Le salon a fermé.', 'A sala foi fechada.', 'La stanza è stata chiusa.'],
+    ['This table could not start its match. Leave and try again.', 'Esta mesa no pudo iniciar su partido. Sal e inténtalo de nuevo.', 'An diesem Tisch konnte das Match nicht starten. Verlasse ihn und versuche es erneut.', 'Cette table n’a pas pu lancer son match. Quittez-la et réessayez.', 'Esta mesa não conseguiu iniciar a partida. Saia e tente de novo.', 'Questo tavolo non è riuscito ad avviare la partita. Esci e riprova.']
   ];
 
   var FULL = ['es-419', 'de-DE', 'fr-FR', 'pt-BR', 'it-IT'];
@@ -313,4 +326,4 @@
     var t = S[l] = S[l] || {};
     ROWS.forEach(function (r) { t[r[0]] = r[i + 1]; });
   });
-})(typeof self !== 'undefined' ? self : this);
+})(globalThis);

@@ -4,11 +4,21 @@
 import { TABLE_W, TABLE_H, MALLET_R, PUCK_R, GOAL_W, legalActions, malletBounds } from './rules.js';
 import { RngStream } from './rng.js';
 
-export function createAI({ skill = 0.5, player = 1, seed = 1 }) {
-  const rng = new RngStream(seed ^ 0xA11CE, 7);
+export function createAI({ skill = 0.5, player = 1, seed = 1, saved = null }) {
+  // `saved` (from save()) resumes a controller exactly where it was: the
+  // authoritative server script keeps no memory between invocations.
+  const stream = new RngStream(seed ^ 0xA11CE, 7);
+  let draws = 0;
+  const rng = { float() { draws++; return stream.float(); } };
   const home = player === 1 ? TABLE_H * 0.82 : TABLE_H * 0.18;
   const goalY = player === 1 ? TABLE_H - MALLET_R : MALLET_R;
   let aimErrX = 0, aimErrY = 0, lastDecision = -1;
+  if (saved) {
+    for (let i = 0; i < (saved.draws | 0); i++) rng.float();
+    aimErrX = +saved.aimErrX || 0;
+    aimErrY = +saved.aimErrY || 0;
+    lastDecision = Number.isFinite(saved.lastDecision) ? saved.lastDecision : -1;
+  }
 
   // Lower skill = fewer decisions per second and larger aim error.
   const decisionInterval = Math.max(1, Math.round(12 - skill * 10)); // ticks
@@ -17,6 +27,8 @@ export function createAI({ skill = 0.5, player = 1, seed = 1 }) {
 
   return {
     player,
+    /** A plain snapshot of the controller's memory (see `saved`). */
+    save() { return { draws, aimErrX, aimErrY, lastDecision }; },
     /** Returns a 'move' command target {x,y} or null if no legal action. */
     update(state) {
       const legal = legalActions(state, player);
