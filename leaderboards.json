@@ -1,0 +1,3 @@
+{
+  "high-score": { "name": "Match score", "scoreType": "integer", "sortDirection": "desc", "minScore": -99, "maxScore": 99 }
+}
