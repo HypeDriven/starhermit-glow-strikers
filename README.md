@@ -3,14 +3,14 @@
 A luminous futuristic tabletop striking game. Defend your goal and strike the
 low-friction puck into the opposing goal with your mallet.
 
-A StarHermit engine script game (engine 1.19.1): the StarHermit client plays
+A StarHermit engine script game (engine 1.22.0): the StarHermit client plays
 it natively, browsers play it on the engine's web runtime through
 `index.html` (the loader `npm run package` writes).
 
 ## Run
 
 ```sh
-STARHERMIT=~/sh/runtime/1.19.1/starhermit-1.19.1-linux-x86_64/starhermit
+STARHERMIT=~/sh/runtime/1.22.0/starhermit-1.22.0-linux-x86_64/starhermit
 $STARHERMIT .            # play in a window (--dev for console output)
 $STARHERMIT check .      # validate and run 120 headless frames
 npm run package          # rewrite index.html + starhermit-files.json after every change
