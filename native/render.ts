@@ -15,10 +15,10 @@
 //   antialias; the grade's GLSL (an S-curve blended 0.22, saturation 1.12,
 //   cool shadows / warm highlights, the vignette) is the built-in
 //   display-space grade with the same tints, split and vignette.
-// - The key light's fitted orthographic shadow box is the engine's
-//   view-based directional shadow (`shadow.distance`).
-// - Light intensities are three.js r160's divided by π (the engine's
-//   convention). Canvas textures are starhermit:canvas CanvasTextures (sRGB,
+// - The key light's fitted orthographic shadow box, PCF soft shadows and light
+//   intensities are three.js r160's as written (minor 28). r160 scaled
+//   scene.environment by each material's envMapIntensity; r185 scales only a
+//   material's own envMap, so standard materials carry the room as envMap. Canvas textures are starhermit:canvas CanvasTextures (sRGB,
 //   as the browser build's SRGBColorSpace ones); the radial sprite is a
 //   DataTexture.
 // - The surface's per-pixel grain (an LCG over every texel) would take
@@ -33,7 +33,7 @@ import {
   CylinderGeometry, DataTexture, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, Line, LineBasicMaterial,
   Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, PMREMGenerator,
   PerspectiveCamera, Plane, PlaneGeometry, PointLight, Points, PointsMaterial, Quaternion, Raycaster, RepeatWrapping,
-  RingGeometry, RoomEnvironment, SRGBColorSpace, TorusGeometry, Vector2, Vector3, pointerToNdc, renderer, scene,
+  OrthographicCamera, PCFSoftShadowMap, RingGeometry, RoomEnvironment, SRGBColorSpace, TorusGeometry, Vector2, Vector3, pointerToNdc, renderer, scene,
 } from "starhermit:scene";
 import type { Material, Texture } from "starhermit:scene";
 import { OffscreenCanvas } from "starhermit:canvas";
@@ -87,14 +87,30 @@ let aspect = 16 / 9;
 let radial: Texture | null = null;
 
 // lights
-const hemi = new HemisphereLight(0x8899cc, 0x0a0c18, 0.55 / PI);
-const key = new DirectionalLight(0xffffff, 1.6 / PI);
+const hemi = new HemisphereLight(0x8899cc, 0x0a0c18, 0.55);
+const key = new DirectionalLight(0xffffff, 1.6);
 key.position.set(-60, 140, -40);
 key.shadow.bias = -0.0004;
 key.shadow.normalBias = 0.4;
-key.shadow.radius = 2;
-key.shadow.distance = 400;
-const fill = new PointLight(0x4466ff, 0.4 / PI, 500, 0);
+/** Fit the key light's orthographic shadow box tightly around the table and its pieces (the page's _fitShadow). */
+function fitShadow(): void {
+  const cam = key.shadow.camera as OrthographicCamera;
+  cam.position.copy(key.position);
+  cam.lookAt(key.target.position);
+  cam.updateMatrixWorld();
+  const hx = TABLE_W / 2 + 8, hz = TABLE_H / 2 + 8;
+  const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
+  const v = new Vector3();
+  for (const x of [-hx, hx]) for (const y of [-6, 8]) for (const z of [-hz, hz]) {
+    v.set(x, y, z).applyMatrix4(cam.matrixWorldInverse);
+    min.min(v); max.max(v);
+  }
+  cam.left = min.x - 2; cam.right = max.x + 2; cam.top = max.y + 2; cam.bottom = min.y - 2;
+  cam.near = Math.max(1, -max.z - 10); cam.far = -min.z + 10;
+  cam.updateProjectionMatrix();
+}
+fitShadow();
+const fill = new PointLight(0x4466ff, 0.4, 500, 0);
 fill.position.set(40, 60, 60);
 scene.add(hemi, key, key.target, fill);
 
@@ -282,6 +298,14 @@ function surfaceTextures(t: Theme, detailed: boolean, size: number): { map: Text
   }
   surfaceCache.set(id, out);
   return out;
+}
+
+function envMaps(): void {
+  const env = scene.environment;
+  scene.traverse((o) => {
+    const m = (o as Mesh).material;
+    for (const x of Array.isArray(m) ? m : m ? [m] : []) if (x instanceof MeshStandardMaterial && x.envMap !== env) x.envMap = env;
+  });
 }
 
 let envTex: Texture | null = null;
@@ -505,6 +529,7 @@ export function applyLook(next: Look): void {
   look = next;
   renderer.camera = camera;
   renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.shadowMap.type = PCFSoftShadowMap;
   renderer.toneMappingExposure = 1.0;
   const pb = prev?.budget, b = next.budget;
   const structural = !prev || prev.detailed !== next.detailed || pb!.material !== b.material || pb!.surface !== b.surface || pb!.segments !== b.segments || pb!.pillars !== b.pillars;
@@ -519,6 +544,7 @@ function applyScene(): void {
   key.castShadow = shadows;
   if (shadows) key.shadow.mapSize = g.shadows;
   scene.environment = g.reflections ? envTexture() : null;
+  envMaps();
   pCap = particleCap(g);
   motes.visible = g.particles === "high";
   moteCount = g.budget.motes;
