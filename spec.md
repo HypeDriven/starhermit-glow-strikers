@@ -1,6 +1,6 @@
 # Glow Strikers — Game Design Document (running spec)
 
-**Status:** shipped on the StarHermit engine 1.28.0 (host API 1.30, `engine.minor=30`); this document describes the game as it runs today.
+**Status:** shipped on the StarHermit engine 1.29.0 (host API 1.31, `engine.minor=31`); this document describes the game as it runs today.
 **Version:** rules v1, content v1, ruleset build `1.0.0` (`js/session.js` `RULESET_BUILD`).
 
 ## 1. Overview
@@ -220,7 +220,7 @@ Every player-facing string ships in nine locales: **en-US, en-GB, es-419, es-ES,
 
 ## 12. StarHermit integration
 
-`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.28.0`, `engine.minor=30`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
+`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.29.0`, `engine.minor=31`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
 
 - **Player:** `player()`; the title shows "Playing as <name> · cloud save synced/saving…/offline". Guests see **Sign in with StarHermit** (`requestSignIn`); signed in, **Invite a friend** copies the invite link (`clipboard.writeText`).
 - **Saves** (`starhermit:storage` `saves`, schema 1): the progress document of `js/progress.js` — cleared stages, stars, totals, streaks, lessons, daily days, challenges, cosmetics, achievements and personal-best boards — on the device and in the account's cloud slot; a conflict merges both copies (`mergeSaves`: unions, the best stars, the larger counts, the earliest unlock; the current streak and cosmetics stay this device's), and an account save that replaced the device's is merged in. **Migration:** the browser build's slot `game:<slug>` (the JS SDK's zipped `save.json` holding `{ checksum, payload }`) shows as foreign; the game verifies the checksum, merges its progress, takes its game settings where this account has none (captions, palette, hold to aim, timing assistance, haptics, left-handed, tutorial flag) and replaces the slot once (`replaceForeign`). Guests' old browser localStorage progress does not carry over.
