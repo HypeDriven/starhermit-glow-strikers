@@ -310,7 +310,7 @@ function envMaps(): void {
 
 let envTex: Texture | null = null;
 function envTexture(): Texture {
-  if (!envTex) envTex = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  if (!envTex) envTex = new PMREMGenerator(renderer).fromScene((() => { const room = new RoomEnvironment(renderer); room.position.y = 0 /* pre-r183 page: room at origin (minor 32 default is -3.5) */; return room; })(), 0.04).texture;
   return envTex;
 }
 
