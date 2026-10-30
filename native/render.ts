@@ -555,7 +555,8 @@ function applyScene(): void {
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: g.ao === "high" ? 6 : 4, rings: 2, samples: g.ao === "high" ? 16 : 8, radiusExponent: 2 },
   };
   // High threshold: only HDR emissives (rails, rings, strips) and hot highlights bloom.
-  renderer.bloom = g.bloom ? { strength: (theme.bloom ?? 0.8) * 0.75, radius: 0.5, threshold: 0.9, resolution: g.budget.bloomRes } : null;
+  // three r160 page: minor 29 bloom follows r185 UnrealBloomPass, so the page strength is squared (pages on r177+ keep theirs).
+  renderer.bloom = g.bloom ? { strength: ((theme.bloom ?? 0.8) * 0.75) ** 2, radius: 0.5, threshold: 0.9, resolution: g.budget.bloomRes } : null;
   renderer.grade = g.grade ? {
     space: "display", contrast: 0.11, saturation: 1.12,
     shadows: [0.95, 0.98, 1.06], highlights: [1.03, 1.0, 0.97], split: [0.2, 0.8],
