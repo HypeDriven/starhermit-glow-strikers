@@ -555,11 +555,11 @@ function applyScene(): void {
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: g.ao === "high" ? 6 : 4, rings: 2, samples: g.ao === "high" ? 16 : 8, radiusExponent: 2 },
   };
   // High threshold: only HDR emissives (rails, rings, strips) and hot highlights bloom.
-  // three r160 page: minor 29 bloom follows r185 UnrealBloomPass, so the page strength is squared (pages on r177+ keep theirs).
-  renderer.bloom = g.bloom ? { strength: ((theme.bloom ?? 0.8) * 0.75) ** 2, radius: 0.5, threshold: 0.9, resolution: g.budget.bloomRes } : null;
+  // three r160 page: the engine's r160 UnrealBloomPass model (minor 30) at the page's own strength.
+  renderer.bloom = g.bloom ? { strength: (theme.bloom ?? 0.8) * 0.75, radius: 0.5, threshold: 0.9, resolution: g.budget.bloomRes, model: "r160" } : null;
   renderer.grade = g.grade ? {
-    space: "display", contrast: 0.11, saturation: 1.12,
-    shadows: [0.95, 0.98, 1.06], highlights: [1.03, 1.0, 0.97], split: [0.2, 0.8],
+    space: "display", contrastCurve: "s", contrast: 0.22, saturation: 1.12,
+    shadows: [0.95, 0.98, 1.06], highlights: [1.03, 1.0, 0.97], split: [0.2, 0.8], levels: [0.975, 0.012],
     vignette: { amount: 0.28, inner: 0.38, outer: 0.9, scale: [1, 0.9] },
   } : null;
   renderer.antialias = g.antialias;
