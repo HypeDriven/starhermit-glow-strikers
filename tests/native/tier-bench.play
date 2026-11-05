@@ -1,0 +1,30 @@
+# Graphics-tier bench (tools/engine-tier-bench.mjs): a Practice match (Club) measured in play: the
+# mallet sweeping left and right by keys, puck strikes, wall banks and bursts, motes and the arena.
+until 300 Daily Challenge
+frames 10
+click =Practice
+until 60 Difficulty
+frames 10
+click Start
+frames 260
+measure start
+hold ArrowLeft
+frames 60
+release ArrowLeft
+hold ArrowUp
+frames 40
+release ArrowUp
+hold ArrowRight
+frames 90
+release ArrowRight
+hold ArrowDown
+frames 30
+release ArrowDown
+hold ArrowLeft
+frames 90
+release ArrowLeft
+hold ArrowUp
+frames 50
+release ArrowUp
+frames 240
+measure stop

@@ -542,21 +542,22 @@ function applyScene(): void {
   const shadows = g.shadows > 0;
   renderer.shadowMap.enabled = shadows;
   key.castShadow = shadows;
-  if (shadows) key.shadow.mapSize = g.shadows;
+  if (shadows) key.shadow.mapSize = g.shadows; // the level's size: at minor 23+ the engine keeps the game's mapSize
   scene.environment = g.reflections ? envTexture() : null;
   envMaps();
   pCap = particleCap(g);
   motes.visible = g.particles === "high";
   moteCount = g.budget.motes;
   moteGeo.setDrawRange(0, moteCount);
-  renderer.ao = g.ao === "off" ? null : {
+  const ao = g.ao, fullAo = !!ao && ao.resolution >= 1; // the engine's "high" AO: full resolution
+  renderer.ao = ao && {
     blendIntensity: 0.7, radius: 6, distanceExponent: 1.5, thickness: 3, scale: 1,
-    samples: g.ao === "high" ? 16 : 8, resolution: g.budget.aoRes,
-    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: g.ao === "high" ? 6 : 4, rings: 2, samples: g.ao === "high" ? 16 : 8, radiusExponent: 2 },
+    samples: ao.samples, resolution: ao.resolution,
+    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: fullAo ? 6 : 4, rings: 2, samples: ao.denoiseSamples, radiusExponent: 2 },
   };
   // High threshold: only HDR emissives (rails, rings, strips) and hot highlights bloom.
   // three r160 page: the engine's r160 UnrealBloomPass model (minor 30) at the page's own strength.
-  renderer.bloom = g.bloom ? { strength: (theme.bloom ?? 0.8) * 0.75, radius: 0.5, threshold: 0.9, resolution: g.budget.bloomRes, model: "r160" } : null;
+  renderer.bloom = g.bloom !== null ? { strength: (theme.bloom ?? 0.8) * 0.75, radius: 0.5, threshold: 0.9, resolution: g.bloom, model: "r160" } : null;
   renderer.grade = g.grade ? {
     space: "display", contrastCurve: "s", contrast: 0.22, saturation: 1.12,
     shadows: [0.95, 0.98, 1.06], highlights: [1.03, 1.0, 0.97], split: [0.2, 0.8], levels: [0.975, 0.012],

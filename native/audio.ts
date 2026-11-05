@@ -14,8 +14,10 @@
 // loaded are not ported, and the pad and the music notes are rendered once
 // into clips (createClip) with the old envelopes: the engine's browser
 // runtime drops clip loads and plays while a live synthesis graph changes
-// (the arrow-exodus port's finding). Clips load once the mixer runs
-// (natively at once, in a browser after the first press), one at a time.
+// (the arrow-exodus port's finding). The clips all load at once in onStart
+// (every loaded clip reaches the mixer, natively and on the web); the pad
+// and the music start once the mixer runs (in a browser after the first
+// press).
 import { context, createClip, loadClip, play as playClip, type AudioClip, type Bus, type Sound } from "starhermit:audio";
 
 const LEVEL = { music: 0.6, effects: 0.8, ambience: 0.25 };
@@ -30,20 +32,14 @@ const SAMPLES: Record<string, string> = {
 export type CaptionKind = "invalid" | "countdown" | "go" | "goal-you" | "goal-opp" | "win" | "lose" | "achievement" | "overtime" | "budget" | "clock-warning" | "save" | "draw";
 
 const clips = new Map<string, AudioClip>();
-const queue: string[] = [];
-let loading = false;
-let wantClips = false;
 let onCaption: ((kind: CaptionKind, detail: { remaining?: number }) => void) | null = null;
 
-function load(name: string): void { if (!queue.includes(name) && !clips.has(name)) queue.push(name); }
-function pump(): void {
-  if (loading || !queue.length) return;
-  const name = queue.shift()!;
-  loading = true;
-  loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); loading = false; }, (e: unknown) => { console.warn(`sfx ${name}: ${String(e)}`); loading = false; });
+/** Loads every clip at once (onStart); a cue whose clip is still loading is skipped. */
+export function loadSfx(): void {
+  for (const name of new Set(Object.values(SAMPLES))) {
+    loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
+  }
 }
-/** Asks for the clips; they load once the mixer runs (see update). */
-export function loadSfx(): void { wantClips = true; }
 export function setOnCaption(cb: (kind: CaptionKind, detail: { remaining?: number }) => void): void { onCaption = cb; }
 
 function caption(name: string, opts: { remaining?: number; scorer?: number }): void {
@@ -66,7 +62,7 @@ export function event(name: string, opts: { remaining?: number; scorer?: number;
   // A strike's loudness follows the puck's speed, as the synthesized hit did.
   const gain = LEVEL.effects * (name === "strike" ? 0.6 + 0.4 * Math.min(1, (opts.speed ?? 80) / 260) : 1);
   try { playClip(clip, { bus, gain }); }
-  catch { clips.delete(file!); load(file!); }
+  catch { /* the mixer is full this frame: skip it */ }
 }
 
 // -- rendered synthesis -----------------------------------------------------------------
@@ -123,16 +119,9 @@ export function setMusicIntensity(x: number): void { intensity = Math.max(0, Mat
 export function startMusic(): void { if (music) return; music = true; beat = 0; nextBeat = 0; }
 export function stopMusic(): void { music = false; }
 
-/** Each frame: the clips once the mixer runs, one rendered note a frame, the pad once it is made, then the music's beats by mixer time. */
+/** Each frame once the mixer runs: one rendered note a frame, the pad once it is made, then the music's beats by mixer time. */
 export function update(): void {
-  if (context.state !== "running") return;
-  if (wantClips) {
-    wantClips = false;
-    for (const name of new Set(Object.values(SAMPLES))) load(name);
-    return;
-  }
-  pump();
-  if (loading || queue.length) return;
+  if (context.state !== "running") return; // starting the pad and the music still waits for the mixer
   try {
     const next = toRender.find((r) => !notes.has(r.id));
     if (next) { notes.set(next.id, next.make()); return; }

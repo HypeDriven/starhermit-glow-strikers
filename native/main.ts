@@ -17,7 +17,7 @@
 // runs it at 85 %, as before), so pausing, a hidden window and a slow frame
 // never move the puck, and play scripts replay exactly. The lessons' delays
 // count the same steps.
-import { frame, onFixedUpdate, onPreferencesChange, onQuit, onRender, onStart, onSuspend, onUpdate, preferences, setFixedRate } from "starhermit:engine";
+import { frame, levelSettings, onFixedUpdate, onPreferencesChange, onQuit, onRender, onStart, onSuspend, onUpdate, preferences, setFixedRate } from "starhermit:engine";
 import { onAction, onPointerButton, onTouch, pointer, primaryPointer, value, vibrate } from "starhermit:input";
 import * as ui from "starhermit:ui";
 import { onPlayerChange, onSessionEnded, player, serverNow } from "starhermit:platform";
@@ -744,7 +744,7 @@ function pointerStep(): void {
   const p = touch.down ? { x: touch.x, y: touch.y } : pointer();
   if (pendingPress) {
     pendingPress = false;
-    if (!ui.pointerOver()) { dragging = true; audio.loadSfx(); }
+    if (!ui.pointerOver()) dragging = true;
   }
   const held = touch.down || mouseDown;
   // Follow mode answers pointer movement (the browser build's pointermove), so a still mouse leaves the keys in charge.
@@ -762,10 +762,10 @@ function pointerStep(): void {
 let lookKey = "";
 function applyLook(): void {
   const f = frame();
-  const key = `${f.quality}:${f.levelIndex}`;
+  const key = f.level;
   if (key === lookKey) return;
   lookKey = key;
-  render.applyLook(lookFor(f.quality, f.levelIndex));
+  render.applyLook(lookFor(levelSettings(f.level)));
 }
 
 audio.setOnCaption((kind, d) => {
