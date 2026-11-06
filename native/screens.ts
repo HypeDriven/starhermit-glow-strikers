@@ -31,10 +31,8 @@ import {
 // ------------------------------------------------------------------ layout
 interface Layout { lw: number; lh: number; sc: number; wide: boolean; portrait: boolean; shortLand: boolean; narrow: boolean }
 function layoutNow(): Layout {
-  const f = frame();
-  const sc = ui.preferences().scale;
-  const sa = f.safeArea;
-  const lw = Math.max(1, (f.width - sa.left - sa.right) / sc), lh = Math.max(1, (f.height - sa.top - sa.bottom) / sc);
+  const v = ui.viewport!();
+  const sc = v.scale, lw = Math.max(1, v.width), lh = Math.max(1, v.height);
   return { lw, lh, sc, wide: lw >= 1024, portrait: lh > lw && lw <= 700, shortLand: lw > lh && lh <= 500, narrow: lw <= 560 };
 }
 const lastHeight = new Map<string, number>();
@@ -135,20 +133,6 @@ export function drawScreens(): void {
     case "expired": expiredScreen(L); break;
     default: break;
   }
-  toasts(L);
-}
-
-function toasts(L: Layout): void {
-  if (!app.toasts.length) return;
-  const w = Math.min(L.lw - 32, 520);
-  ui.place("toasts", { anchor: "bottom-start", x: (L.lw - w) / 2, y: 70 }, () => {
-    app.toasts.forEach((t, i) => {
-      ui.column(`toast-${i}`, () => {
-        if (textWidth(t.text, "toast") + 38 <= w) ui.style("toast").label(t.text);
-        else ui.style("toast").paragraph(t.text, w - 38);
-      }, { align: "center", width: w });
-    });
-  }, { spacing: 8, width: w });
 }
 
 // ------------------------------------------------------------------ HUD
@@ -259,10 +243,10 @@ function titleScreen(L: Layout): void {
       { id: "btn-settings", text: T("Settings"), style: ["btn", "btn-small"], act: () => openOverlay("settings") },
       { id: "btn-help", text: T("How to Play"), style: ["btn", "btn-small"], act: () => openOverlay("help") },
     ];
-    if (!player()) list.push({ id: "btn-signin", text: P("signIn"), style: ["btn", "btn-small"], act: () => { void requestSignIn().catch(() => undefined); } });
+    if (!player()) list.push({ id: "btn-signin", text: T("starhermit.signIn"), style: ["btn", "btn-small"], act: () => { void requestSignIn().catch(() => undefined); } });
     else {
       const link = platform.inviteLink();
-      if (link) list.push({ id: "btn-invite-link", text: P("invite"), style: ["btn", "btn-small"], act: () => { try { clipboard.writeText(link); toast(P("inviteCopied")); } catch { toast(P("inviteFailed")); } } });
+      if (link) list.push({ id: "btn-invite-link", text: T("starhermit.invite"), style: ["btn", "btn-small"], act: () => { try { clipboard.writeText(link); toast(T("starhermit.inviteCopied")); } catch { toast(T("starhermit.inviteFailed")); } } });
     }
     return list;
   };
@@ -313,7 +297,7 @@ function titleScreen(L: Layout): void {
 }
 function accountText(): string {
   const me = player();
-  if (!me) return app.signedOut ? P("signedOut") : "";
+  if (!me) return app.signedOut ? T("starhermit.signedOut") : "";
   const st = platform.syncState();
   const key = st === "saving" ? "Playing as {name} · cloud save saving…" : st === "synced" ? "Playing as {name} · cloud save synced" : "Playing as {name} · cloud save offline";
   return T(key, { name: me.displayName });
@@ -502,7 +486,7 @@ function resultsScreen(L: Layout): void {
     }
     if (r.lb) {
       const lb = r.lb;
-      para(lb.pending ? P("lbPosting") : !lb.posted ? P("lbNotPosted") : lb.rank ? P("lbRank", { rank: lb.rank }) : P("lbPosted"), w, "dim", true);
+      para(lb.pending ? T("starhermit.leaderboardPosting") : !lb.posted ? T("starhermit.leaderboardNotPosted") : lb.rank ? T("starhermit.leaderboardRank", { rank: lb.rank }) : T("starhermit.leaderboardPosted"), w, "dim", true);
     }
   }, () => {
     const inner = Math.max(200, Math.min(560, L.lw - 32)) - (L.portrait ? 32 : 48) - 2;
@@ -639,7 +623,7 @@ function lobbyScreen(L: Layout): void {
     h2(T("Hosted Play"), "lobby-heading");
     if (!player()) {
       para(T("Hosted matches are played on StarHermit: sign in to create or join a room."), w, "dim");
-      button({ id: "btn-lobby-signin", text: P("signIn"), style: ["btn", "btn-primary"], act: () => { void requestSignIn().catch(() => undefined); } }, w);
+      button({ id: "btn-lobby-signin", text: T("starhermit.signIn"), style: ["btn", "btn-primary"], act: () => { void requestSignIn().catch(() => undefined); } }, w);
       return;
     }
     if (h.status) para(T(h.status, h.statusVars), w, "dim");

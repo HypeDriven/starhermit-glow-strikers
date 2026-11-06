@@ -12,13 +12,13 @@
 // default bus levels (music 60 %, effects 80 %, ambience 25 %) are folded
 // into each sound's gain. The synthesized stand-ins it played while a sample
 // loaded are not ported, and the pad and the music notes are rendered once
-// into clips (createClip) with the old envelopes: the engine's browser
+// into clips on OfflineAudioContext with the old envelopes: the engine's browser
 // runtime drops clip loads and plays while a live synthesis graph changes
 // (the arrow-exodus port's finding). The clips all load at once in onStart
 // (every loaded clip reaches the mixer, natively and on the web); the pad
 // and the music start once the mixer runs (in a browser after the first
 // press).
-import { context, createClip, loadClip, play as playClip, type AudioClip, type Bus, type Sound } from "starhermit:audio";
+import { OfflineAudioContext, context, createClip, loadClip, play as playClip, type AudioClip, type Bus, type Sound } from "starhermit:audio";
 
 const LEVEL = { music: 0.6, effects: 0.8, ambience: 0.25 };
 /** Logical event → authored sample basename (sfx/manifest.json). */
@@ -36,6 +36,7 @@ let onCaption: ((kind: CaptionKind, detail: { remaining?: number }) => void) | n
 
 /** Loads every clip at once (onStart); a cue whose clip is still loading is skipped. */
 export function loadSfx(): void {
+  renderAll();
   for (const name of new Set(Object.values(SAMPLES))) {
     loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
   }
@@ -65,49 +66,45 @@ export function event(name: string, opts: { remaining?: number; scorer?: number;
   catch { /* the mixer is full this frame: skip it */ }
 }
 
-// -- rendered synthesis -----------------------------------------------------------------
+// -- rendered synthesis (one offline context per clip) ---------------------------------
 const RATE = 22050;
-function env(t: number, a: number, d: number, peak: number): number {
-  if (t < a) return (t / a) * peak;
-  const k = (t - a) / d;
-  return k >= 1 ? 0 : peak * Math.pow(0.0001 / peak, k);
-}
-function wave(type: "sine" | "triangle", phase: number): number {
-  if (type === "sine") return Math.sin(2 * Math.PI * phase);
-  const p = phase - Math.floor(phase);
-  return p < 0.25 ? p * 4 : p < 0.75 ? 2 - p * 4 : p * 4 - 4;
-}
 /** js/audio.js _osc: a 5 ms attack and an exponential fall to 0.0001 over `dur`. */
-function noteClip(type: "sine" | "triangle", freq: number, dur: number): AudioClip {
-  const n = Math.round((dur + 0.05) * RATE);
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / RATE;
-    out[i] = wave(type, freq * t) * env(t, 0.005, dur, 1);
-  }
-  return createClip([out], RATE);
+async function renderNote(type: "sine" | "triangle", freq: number, dur: number): Promise<AudioClip> {
+  const off = new OfflineAudioContext(1, Math.round((dur + 0.05) * RATE), RATE);
+  const osc = off.createOscillator();
+  osc.type = type; osc.frequency.value = freq;
+  const g = off.createGain();
+  g.gain.setValueAtTime(0, 0);
+  g.gain.linearRampToValueAtTime(1, 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, 0.005 + dur);
+  osc.connect(g).connect(off.destination);
+  osc.start();
+  return createClip(await off.startRendering());
 }
 /** The ambience pad: 55 Hz + 82.5 Hz sines at 0.05, breathing ±0.02 with a 1/14 Hz LFO, one seamless 14 s loop. */
-function padClip(): AudioClip {
+async function renderPad(): Promise<AudioClip> {
   const L = 14, rate = 11025;
-  const n = L * rate;
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    const g = 0.05 + 0.02 * Math.sin((2 * Math.PI * t) / L);
-    out[i] = (Math.sin(2 * Math.PI * 55 * t) + Math.sin(2 * Math.PI * 82.5 * t)) * g;
-  }
-  return createClip([out], rate);
+  const off = new OfflineAudioContext(1, L * rate, rate);
+  const g = off.createGain();
+  g.gain.value = 0.05;
+  const lfo = off.createOscillator(), depth = off.createGain();
+  lfo.frequency.value = 1 / L; depth.gain.value = 0.02;
+  lfo.connect(depth).connect(g.gain);
+  lfo.start();
+  for (const f of [55, 82.5]) { const o = off.createOscillator(); o.frequency.value = f; o.connect(g); o.start(); }
+  g.connect(off.destination);
+  return createClip(await off.startRendering());
 }
 
 const BASS = [110, 110, 130.8, 98];
 const ARP = [220, 261.6, 329.6, 261.6];
 const notes = new Map<string, AudioClip>();
-const toRender: { id: string; make: () => AudioClip }[] = [
-  { id: "pad", make: padClip },
-  ...BASS.filter((f, i) => BASS.indexOf(f) === i).map((f) => ({ id: `bass:${f}`, make: () => noteClip("triangle", f / 2, 0.4) })),
-  ...ARP.flatMap((f) => [f, f * 0.891]).filter((f, i, a) => a.indexOf(f) === i).map((f) => ({ id: `arp:${f}`, make: () => noteClip("sine", f, 0.18) })),
-];
+function renderAll(): void {
+  const keep = (id: string, r: Promise<AudioClip>): void => { r.then((c) => { notes.set(id, c); }, (e: unknown) => console.warn(`audio ${id}: ${String(e)}`)); };
+  keep("pad", renderPad());
+  for (const f of new Set(BASS)) keep(`bass:${f}`, renderNote("triangle", f / 2, 0.4));
+  for (const f of new Set(ARP.flatMap((x) => [x, x * 0.891]))) keep(`arp:${f}`, renderNote("sine", f, 0.18));
+}
 
 let music = false;
 let intensity = 0;
@@ -119,13 +116,12 @@ export function setMusicIntensity(x: number): void { intensity = Math.max(0, Mat
 export function startMusic(): void { if (music) return; music = true; beat = 0; nextBeat = 0; }
 export function stopMusic(): void { music = false; }
 
-/** Each frame once the mixer runs: one rendered note a frame, the pad once it is made, then the music's beats by mixer time. */
+/** Each frame once the mixer runs: the pad once it is made, then the music's beats by mixer time. */
 export function update(): void {
   if (context.state !== "running") return; // starting the pad and the music still waits for the mixer
   try {
-    const next = toRender.find((r) => !notes.has(r.id));
-    if (next) { notes.set(next.id, next.make()); return; }
-    if (!pad) pad = playClip(notes.get("pad")!, { bus: "effects", gain: LEVEL.ambience, loop: true });
+    const padClip = notes.get("pad");
+    if (!pad && padClip) pad = playClip(padClip, { bus: "effects", gain: LEVEL.ambience, loop: true });
   } catch (e) { console.warn(`audio: ${String(e)}`); return; }
   if (!music) return;
   const now = context.currentTime;

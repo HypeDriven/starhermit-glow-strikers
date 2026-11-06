@@ -7,18 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import vm from 'node:vm';
 import { JOURNEY, CHALLENGES, LESSONS, ACHIEVEMENTS } from '../js/content.js';
-import { LOCALES } from '../js/i18n/locale.js';
-import { platformStrings, PLATFORM_LOCALES } from '../js/platform-strings.js';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
-const sandbox = {};
-sandbox.globalThis = sandbox;
-vm.createContext(sandbox);
-for (const f of ['js/i18n/strings.js', 'js/i18n/strings-content.js']) vm.runInContext(read(f), sandbox);
-const TABLES = sandbox.GS_STRINGS;
+const TABLES = JSON.parse(read('assets/strings.json'));
+const LOCALES = ['en-US', 'en-GB', 'es-419', 'es-ES', 'de-DE', 'fr-FR', 'fr-CA', 'pt-BR', 'it-IT'];
 const PARENT = { 'en-GB': 'en-US', 'es-ES': 'es-419', 'fr-CA': 'fr-FR' };
 const FULL = ['es-419', 'de-DE', 'fr-FR', 'pt-BR', 'it-IT'];
 
@@ -46,7 +40,7 @@ function usedKeys() {
   CHALLENGES.forEach((c) => { keys.add(c.name); keys.add(c.description); });
   LESSONS.forEach((l) => { keys.add(l.title); keys.add(l.text); });
   ACHIEVEMENTS.forEach((a) => { keys.add(a.name); keys.add(a.description); });
-  return [...keys].filter((k) => k && /[A-Za-z]/.test(k)).sort();
+  return [...keys].filter((k) => k && /[A-Za-z]/.test(k) && !k.startsWith('starhermit.')).sort();
 }
 
 const holes = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
@@ -69,9 +63,8 @@ test('every used key is translated in every locale; placeholders intact', () => 
   assert.deepEqual(problems, []);
 });
 
-test('account strings cover all nine locales', () => {
-  for (const l of LOCALES) {
-    assert.ok(PLATFORM_LOCALES.includes(l), l);
-    for (const k of Object.keys(platformStrings('en-US'))) assert.ok(platformStrings(l)[k], `${l} ${k}`);
-  }
+test('account lines cover all nine locales', () => {
+  const keys = Object.keys(TABLES['en-US']).filter((k) => k.startsWith('acct.'));
+  assert.ok(keys.length > 10);
+  for (const l of LOCALES) for (const k of keys) assert.ok(lookup(l, k), `${l} ${k}`);
 });

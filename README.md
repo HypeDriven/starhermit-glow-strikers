@@ -41,7 +41,7 @@ npm run test:browser   # the packaged web build in Chrome on the GPU: desktop, p
   UI, `render.ts` arena, `audio.ts`, `platform.ts` saves/settings/leaderboard,
   `net.ts` hosted rooms, `i18n.ts`, `quality.ts`, `style.ts`.
 - `js/rules.js`, `rng.js`, `session.js`, `ai.js`, `content.js` — pure rules, shared by the client, `server.js` and the tests.
-- `js/progress.js` — the save document's rules; `js/i18n/` — string tables.
+- `js/progress.js` — the save document's rules; `assets/strings.json` — string tables.
 - `server.js` — the platform script: hosted-match referee and score posting
   (`npm run server` regenerates its RULES block from `js/`).
 - `tools/ui-style.css` → `assets/ui-style.json` (`npm run css`).

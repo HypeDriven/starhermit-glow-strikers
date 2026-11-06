@@ -98,7 +98,6 @@ export const app = {
   budget: null as string | null,
   banner: null as { text: string; until: number; assertive: boolean } | null,
   caption: null as { text: string; until: number } | null,
-  toasts: [] as { text: string; until: number }[],
   boardState: false,
   boardText: "",
   lastSaves: 0,
@@ -112,7 +111,8 @@ export const app = {
 };
 
 const now = (): number => frame().time;
-export function toast(text: string): void { app.toasts.push({ text, until: now() + 3.5 }); if (app.toasts.length > 4) app.toasts.shift(); }
+/** A note above the bottom controls on every screen; a press still reaches the table. */
+export function toast(text: string): void { ui.toast!(text, { duration: 3.5, style: "toast", dismissible: false, announce: false, position: "bottom", offset: 54 }); }
 export function announce(text: string, assertive = false): void { if (text) ui.announce(text, { politeness: assertive ? "assertive" : "polite" }); }
 export function caption(text: string): void { app.caption = { text, until: now() + 2.5 }; }
 function banner(text: string, assertive = true): void {
@@ -795,7 +795,7 @@ onStart(() => {
 onPreferencesChange((p) => { render.setReducedMotion(p.reducedMotion); applyPalette(settings.palette, p.highContrast); });
 platform.onSettingsChange(() => applyPalette(settings.palette, preferences().highContrast));
 onLanguage(() => { if (app.session && app.mode !== "hosted") { setObjective(); updateHud(); } });
-onSessionEnded(() => { app.signedOut = true; toast(P("signedOut")); });
+onSessionEnded(() => { app.signedOut = true; toast(T("starhermit.signedOut")); });
 onPlayerChange((p) => { if (p) app.signedOut = false; });
 onSuspend(() => {
   // Backgrounding pauses a solo match (a hosted one runs on the server).
@@ -839,7 +839,6 @@ onUpdate((dt) => {
   const t = now();
   if (app.banner && t > app.banner.until) app.banner = null;
   if (app.caption && t > app.caption.until) app.caption = null;
-  app.toasts = app.toasts.filter((x) => x.until > t);
   if (app.boardState && frame().frame % 30 === 0) app.boardText = boardStateText();
 });
 
