@@ -12,7 +12,7 @@ import { JOURNEY, CHALLENGES, LESSONS, ACHIEVEMENTS } from '../js/content.js';
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
 const TABLES = JSON.parse(read('assets/strings.json'));
-const LOCALES = ['en-US', 'en-GB', 'es-419', 'es-ES', 'de-DE', 'fr-FR', 'fr-CA', 'pt-BR', 'it-IT'];
+const LOCALES = ['en-US', 'en-GB', 'es-419', 'es-ES', 'de-DE', 'fr-FR', 'fr-CA', 'pt-BR', 'it-IT', 'fr-BE', 'de-BE', 'en-SG', 'en-HK', 'en-BQ', 'es-CO', 'de-IT', 'fr-IT', 'es-CL', 'es-AR', 'es-EC', 'nl-BE', 'de-BR', 'zh-SG', 'ms-SG', 'zh-HK', 'yue-HK', 'nl-NL', 'fi-FI', 'sv-FI', 'id-ID', 'vi-VN', 'ja-JP', 'ta-SG', 'et-EE', 'ru-FI', 'ru-EE', 'da-DE', 'lb-BE', 'co-FR', 'eu-FR', 'ca-FR', 'oc-FR', 'sl-IT', 'fur-IT', 'ca-IT', 'oc-IT', 'ca-ES', 'eu-ES', 'gl-ES', 'su-ID', 'bew-ID', 'km-VN'];
 const PARENT = { 'en-GB': 'en-US', 'es-ES': 'es-419', 'fr-CA': 'fr-FR' };
 const FULL = ['es-419', 'de-DE', 'fr-FR', 'pt-BR', 'it-IT'];
 
@@ -28,7 +28,7 @@ const TABLE_KEYS = [
 
 function usedKeys() {
   const keys = new Set(TABLE_KEYS);
-  for (const f of readdirSync(new URL('native/', ROOT))) {
+  for (const f of readdirSync(new URL('native/', ROOT), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith('.ts')).map((entry) => entry.name)) {
     const src = read(`native/${f}`);
     for (const m of src.matchAll(/\bT\(\s*"((?:[^"\\]|\\.)*)"/g)) keys.add(m[1]);
   }

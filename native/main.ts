@@ -1,3 +1,4 @@
+import { withLanguageRender as __l10nRender } from "./l10n/menu.ts";
 // Glow Strikers on the StarHermit engine: the entry module (starhermit.txt
 // engine.entry), played natively by the StarHermit client and in browsers by
 // the engine's web runtime. The rules, AI, session, content and progress
@@ -842,7 +843,7 @@ onUpdate((dt) => {
   if (app.boardState && frame().frame % 30 === 0) app.boardText = boardStateText();
 });
 
-onRender((alpha) => {
+onRender(__l10nRender((alpha) => {
   drawScreens();
   pointerStep();
   const f = frame();
@@ -858,6 +859,10 @@ onRender((alpha) => {
     // No positions yet (menus, lobby, a hosted match waiting for its first snapshot): the attract view.
     render.render(frameDt, null, null, 1, null, f.width, f.height);
   }
-});
+}));
 
 export type { Vars };
+
+// localization-runtime:menu
+import { installLanguageMenu as __installLanguageMenu } from "./l10n/menu.ts";
+__installLanguageMenu(false);
