@@ -1,0 +1,98 @@
+{
+  "game": {
+    "id": "5993045f-c9b5-4673-a9e1-e693bc4bbecf",
+    "displayName": "Glow Strikers",
+    "hosting": {
+      "hostingEnabled": true,
+      "hostedUrl": "https://5993045f-c9b5-4673-a9e1-e693bc4bbecf.starhermit.com/index.html",
+      "deployStatus": "live",
+      "pinnedCommitSha": null,
+      "deployedCommitSha": null,
+      "deployError": null,
+      "deployedAt": "2026-11-12T08:14:34.622584+00:00",
+      "externalLaunchUrl": null,
+      "engineVersion": "1.38.0",
+      "deployWarning": null
+    }
+  },
+  "publishedAt": "2026-11-12T08:14:37.891Z",
+  "sourceCommit": "a0c7fb86edc197f58257a4d8fee917c2b6afcc31",
+  "bytesReceived": 1785222,
+  "archiveSha256": "935df18109e2835dbf4bc831fc73a6e3bc7f5ddcc50b0bfa24a4f2336310307a",
+  "indexSha256": "7fbccb98e0eed39249067241d18db728398cb0a09e4febe1ebe0517fb61ecba5",
+  "result": {
+    "clientPublished": true,
+    "serverImageLoaded": false,
+    "imageDigest": null,
+    "bytesReceived": 1785222,
+    "mode": "replace",
+    "filesRemoved": 0,
+    "engineVersion": "1.38.0",
+    "deployWarning": null
+  },
+  "liveVerification": {
+    "at": "2026-11-12T08:14:37.891Z",
+    "files": [
+      {
+        "file": "starhermit-files.json",
+        "sha256": "7fbccb98e0eed39249067241d18db728398cb0a09e4febe1ebe0517fb61ecba5",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/Japanese.otf",
+        "sha256": "77b6b39db8586eae173c196f60f653ba22086e7696e967aff3cf08112447883f",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/Khmer.ttf",
+        "sha256": "5053a7a0d52043372c3e584dc0d16282d03785324e44004673cebe1480d2d27c",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/SimplifiedChinese.otf",
+        "sha256": "50e2735bbe71fed0c7540cfed0eb094308f75762b23f77dbf52d4fecb3c57ea5",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/Tamil.ttf",
+        "sha256": "438f67e6e8b001c1694bd32c494f1d90f99f67bfa0f3f414d5c930579f20b3d0",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/TraditionalChinese.otf",
+        "sha256": "f439e7396e2fbda97c54118dba2bbb497939686559d9b98adc85e5d31c86e5b2",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/common.json",
+        "sha256": "12c8d88572f990947414f99d32ffadeafcb56cc5cd08d0742463e0c79856796e",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/fonts.json",
+        "sha256": "37beaea0dba54c9f2c45995cbf9fd19fad21719d701718c41d7e58dd7748ca13",
+        "status": 200
+      },
+      {
+        "file": "assets/localization/locales.json",
+        "sha256": "c70e72b30814b2c1dfab5a0f75cd833d536c9bb13a08cd8554318762d351bcdf",
+        "status": 200
+      },
+      {
+        "file": "assets/strings.json",
+        "sha256": "56b1d4ec734ead0b733482fa5050e99ef1d903570f3c67ae94bc23ab2a2e1c72",
+        "status": 200
+      },
+      {
+        "file": "index.html",
+        "sha256": "6d93cc327675e0412cc3475dd481443dafc8c6225ff0b96f6a47307adb579d7f",
+        "status": 200
+      },
+      {
+        "file": "starhermit.txt",
+        "sha256": "6f9309bf0ffd51b70acb85b9be71caf8136cfc0fea78d72d32a210faa75280d2",
+        "status": 200
+      }
+    ]
+  }
+}
