@@ -1,5 +1,7 @@
 # Glow Strikers
 
+**[▶ Play Glow Strikers on StarHermit](https://dashboard.starhermit.com/play/5993045f-c9b5-4673-a9e1-e693bc4bbecf)**
+
 A luminous futuristic tabletop striking game. Defend your goal and strike the
 low-friction puck into the opposing goal with your mallet.
 
