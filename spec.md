@@ -1,6 +1,6 @@
 # Glow Strikers — Game Design Document (running spec)
 
-**Status:** shipped on the StarHermit engine 1.39.0 (host API 1.39, `engine.minor=39`); this document describes the game as it runs today.
+**Status:** shipped on the StarHermit engine 1.44.1 (host API 1.44, `engine.minor=44`); this document describes the game as it runs today.
 **Version:** rules v1, content v1, ruleset build `1.0.0` (`js/session.js` `RULESET_BUILD`).
 
 ## 1. Overview
@@ -220,7 +220,7 @@ Every player-facing string ships in nine locales: **en-US, en-GB, es-419, es-ES,
 
 ## 12. StarHermit integration
 
-`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.39.0`, `engine.minor=39`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
+`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.44.1`, `engine.minor=44`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
 
 - **Player:** `player()`; the title shows "Playing as <name> · cloud save synced/saving…/offline". Guests see **Sign in with StarHermit** (`requestSignIn`); signed in, **Invite a friend** copies the invite link (`clipboard.writeText`).
 - **Saves** (`starhermit:storage` `saves`, schema 1): the progress document of `js/progress.js` — cleared stages, stars, totals, streaks, lessons, daily days, challenges, cosmetics, achievements and personal-best boards — on the device and in the account's cloud slot; a conflict merges both copies (`mergeSaves`: unions, the best stars, the larger counts, the earliest unlock; the current streak and cosmetics stay this device's), and an account save that replaced the device's is merged in. **Migration:** the browser build's slot `game:<slug>` (the JS SDK's zipped `save.json` holding `{ checksum, payload }`) shows as foreign; the game verifies the checksum, merges its progress, takes its game settings where this account has none (captions, palette, hold to aim, timing assistance, haptics, left-handed, tutorial flag) and replaces the slot once (`replaceForeign`). Guests' old browser localStorage progress does not carry over.
@@ -290,3 +290,9 @@ Every player-facing string ships in nine locales: **en-US, en-GB, es-419, es-ES,
 The string tables include complete regional variants for `fr-BE`, `de-BE`, `en-SG`, `en-HK`, `en-BQ`, `es-CO`, `de-IT`, `fr-IT`, `es-CL`, `es-AR`, `es-EC`, `de-BR`. These reuse the corresponding existing translations in their language family. The runtime can resolve the exact regional tag. Language selection is available from the game’s Options panel or F2 and is saved per player in `ui.language`. Changes apply during play. Additional national, regional and indigenous language packs are only shipped once every English message has a translation with intact placeholders and markup. Complete additional language tables: `nl-BE`, `zh-SG`, `ms-SG`, `zh-HK`, `yue-HK`, `nl-NL`, `fi-FI`, `sv-FI`, `id-ID`, `vi-VN`, `ja-JP`, `ta-SG`, `et-EE`, `ru-FI`, `ru-EE`, `da-DE`, `lb-BE`, `co-FR`, `eu-FR`, `ca-FR`, `oc-FR`, `sl-IT`, `fur-IT`, `ca-IT`, `oc-IT`, `ca-ES`, `eu-ES`, `gl-ES`, `su-ID`, `bew-ID`, `km-VN`.
 
 <!-- regional-localization:end -->
+
+## Engine 1.44.1
+
+Browser play uses the WebGPU-only StarHermit 1.44.1 web runtime. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
+
+The help screen replays through retained native UI while its contents, options, layout and key bindings are unchanged.

@@ -124,7 +124,7 @@ function firstLabel(): string | null {
   }
 }
 
-export function drawScreens(): void {
+function drawScreensImmediate(): void {
   const L = layoutNow();
   const age = frame().frame - app.openedFrame;
   if (app.focusNext && app.screen && age >= 2) {
@@ -724,4 +724,11 @@ function expiredScreen(L: Layout): void {
     para(terms ? P("termsRequiredBody") : P("sessionExpiredBody"), w, "dim");
     button({ id: "btn-play-local", text: P("playLocal"), style: ["btn", "btn-primary"], act: () => showScreen("title") }, w);
   });
+}
+
+export function drawScreens(): void {
+  if (app.screen !== "help") { drawScreensImmediate(); return; }
+  const actions = ["up","down","left","right","pause","undo","camera","hint","board"];
+  const version = JSON.stringify([(app as any).settings ?? (app as any).options ?? {}, (platform as any).options ?? {}, actions.map((action) => bindings(action))]);
+  ui.retain!("help-screen", version, drawScreensImmediate);
 }
