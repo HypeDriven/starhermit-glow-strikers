@@ -564,6 +564,7 @@ function applyScene(): void {
     vignette: { amount: 0.28, inner: 0.38, outer: 0.9, scale: [1, 0.9] },
   } : null;
   renderer.antialias = g.antialias;
+  renderer.motionBlur = g.bloom !== null ? { intensity: 0.25, samples: 8, maxPixels: 16, targetFps: 60, camera: false } : null;
 }
 
 export function setReducedMotion(on: boolean): void {
