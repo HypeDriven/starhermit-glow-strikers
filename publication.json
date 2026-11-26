@@ -12,7 +12,7 @@
     "metadataSource": "starhermit.txt",
     "createdAt": "2026-09-01T07:01:00.782596+00:00",
     "coverArtSource": "manifest",
-    "coverArtUpdatedAt": "2026-11-23T17:01:46.428267+00:00",
+    "coverArtUpdatedAt": "2026-11-26T13:58:22.051037+00:00",
     "submittedByUserId": "2712e04e-461b-4d23-81ae-e40b429128a8",
     "submittedByUsername": "starhermit",
     "hosting": {
@@ -22,9 +22,9 @@
       "pinnedCommitSha": null,
       "deployedCommitSha": null,
       "deployError": null,
-      "deployedAt": "2026-11-23T17:01:46.404092+00:00",
+      "deployedAt": "2026-11-26T13:58:22.027881+00:00",
       "externalLaunchUrl": null,
-      "engineVersion": "1.47.0",
+      "engineVersion": "1.50.0",
       "deployWarning": null
     },
     "description": "Defend your goal and strike a fast-moving puck past your opponent on a glowing air-hockey table.",
@@ -36,19 +36,19 @@
     "links": [],
     "isDisabled": false
   },
-  "publishedAt": "2026-11-23T17:01:46.534Z",
-  "sourceCommit": "837103f4aee87872a11baa6ec7eb8165f46df819",
-  "bytesReceived": 2618238,
-  "archiveSha256": "6b15faf8dbef11356b3b9f9acea0b868be3fa12106b1970731a3f267daea01fb",
+  "publishedAt": "2026-11-26T13:58:21.003Z",
+  "sourceCommit": "81e7ffb6f5d2dd4dd3e6e0b01d8eea093d669b95",
+  "bytesReceived": 2618234,
+  "archiveSha256": "be31fb7d7fa56d9475c0b3fcb7edf37fb75e93d3ccaccf305c9acfa313fc1b50",
   "indexSha256": "c0d9dee69b39662246978e989620c268ffa4bf1a13a3cf5ff8f17fb7b6d8bc3b",
   "result": {
     "clientPublished": true,
     "serverImageLoaded": false,
     "imageDigest": null,
-    "bytesReceived": 2618238,
+    "bytesReceived": 2618234,
     "mode": "replace",
     "filesRemoved": 0,
-    "engineVersion": "1.47.0",
+    "engineVersion": "1.50.0",
     "deployWarning": null
   },
   "liveVerification": {
