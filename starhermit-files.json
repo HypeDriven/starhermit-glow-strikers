@@ -44,7 +44,7 @@
     "native/render.ts": {"sha256": "06021a72c22e8a00e457a4f4ca6216e80338f1d0e9f2b3abaeeaf464c0f1859f", "size": 33829},
     "native/screens.ts": {"sha256": "eb349a16fa02ce18241c7a3877c8b73ffda80b7a28fccb5184782ca5fa8afb2b", "size": 42882},
     "native/style.ts": {"sha256": "d982a5144cfd70346db68e2627e94d69fb11e32e134bf9c08b6d4b96a63c1e66", "size": 2787},
-    "publication.json": {"sha256": "0655abe59f642a70deaaf2f7abde9268f5591ee344c22c7d22dadf2a24caa7ac", "size": 4126},
+    "publication.json": {"sha256": "09300d058f733acf9435f215c04dbce6a8ce36c548f453247b18b363daf11d17", "size": 4126},
     "server.js": {"sha256": "424ca5ff6fb4bd6a26b408819141e1a1c48d54473b9397e74491219e3a0e65d6", "size": 36718},
     "sfx/achievement-chime.opus": {"sha256": "69555341d569d77d4f2ebb312c73b6c47e802ccb68248dc5f2b0abf334948588", "size": 16644},
     "sfx/budget-empty.opus": {"sha256": "6494e818876f0f5efe066f60b8cb49682e65b752eccccb997aad7ea9bdebbb28", "size": 14589},
