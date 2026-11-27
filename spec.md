@@ -1,6 +1,6 @@
 # Glow Strikers — Game Design Document (running spec)
 
-**Status:** shipped on the StarHermit engine 1.51.0 (host API 1.51, `engine.minor=51`); this document describes the game as it runs today.
+**Status:** shipped on the StarHermit engine 1.53.0 (host API 1.53, `engine.minor=53`); this document describes the game as it runs today.
 **Version:** rules v1, content v1, ruleset build `1.0.0` (`js/session.js` `RULESET_BUILD`).
 
 ## 1. Overview
@@ -220,7 +220,7 @@ Every player-facing string ships in nine locales: **en-US, en-GB, es-419, es-ES,
 
 ## 12. StarHermit integration
 
-`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.51.0`, `engine.minor=51`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
+`starhermit.txt`: `name`, `description`, `owner`, `server=server.js`, `cover=cover.jpg`, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.53.0`, `engine.minor=53`, `engine.capabilities=platform,storage,clipboard`, the `control.*` / `engine.gamepad.*` / `engine.group.*` lines of section 6.
 
 - **Player:** `player()`; the title shows "Playing as <name> · cloud save synced/saving…/offline". Guests see **Sign in with StarHermit** (`requestSignIn`); signed in, **Invite a friend** copies the invite link (`clipboard.writeText`).
 - **Saves** (`starhermit:storage` `saves`, schema 1): the progress document of `js/progress.js` — cleared stages, stars, totals, streaks, lessons, daily days, challenges, cosmetics, achievements and personal-best boards — on the device and in the account's cloud slot; a conflict merges both copies (`mergeSaves`: unions, the best stars, the larger counts, the earliest unlock; the current streak and cosmetics stay this device's), and an account save that replaced the device's is merged in. **Migration:** the browser build's slot `game:<slug>` (the JS SDK's zipped `save.json` holding `{ checksum, payload }`) shows as foreign; the game verifies the checksum, merges its progress, takes its game settings where this account has none (captions, palette, hold to aim, timing assistance, haptics, left-handed, tutorial flag) and replaces the slot once (`replaceForeign`). Guests' old browser localStorage progress does not carry over.
@@ -291,12 +291,14 @@ The string tables include complete regional variants for `fr-BE`, `de-BE`, `en-S
 
 <!-- regional-localization:end -->
 
-## Engine 1.51.0
+## Engine 1.53.0
 
-Browser play uses the StarHermit 1.51.0 web runtime on WebGPU, or WebGL 2 where WebGPU is missing. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
+Browser play uses the StarHermit 1.53.0 web runtime on WebGPU, or WebGL 2 where WebGPU is missing. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
 
 The help screen replays through retained native UI while its contents, options, layout and key bindings are unchanged.
 
 Browser rendering uses the engine's asynchronous pipeline creation so newly encountered materials do not stall the page. Native play retains the engine's synchronous pipeline behavior.
 
 Higher graphics tiers use native per-object motion blur for moving pieces and effects. Camera motion stays sharp, lower tiers omit the effect, and the runtime's Motion blur and Reduce motion preferences remain authoritative.
+
+On engine 1.53.0, browser play through WebGL 2 compiles a frame's shader programs together and holds that frame until they are linked, blends skinned meshes in one pass, reuses the window pass's depth, and uses a hardware WebGL 2 context when WebGPU's adapter is software.
