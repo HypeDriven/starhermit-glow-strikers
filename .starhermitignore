@@ -11,3 +11,7 @@ leaderboards.json
 sfx/manifest.json
 sfx/manifest.md
 sfx/manifest.txt
+
+# Monolith locale tables. The game loads assets/l10n/<kind>/<locale>.json.
+assets/localization/common.json
+assets/strings.json

@@ -36,7 +36,6 @@ let onCaption: ((kind: CaptionKind, detail: { remaining?: number }) => void) | n
 
 /** Loads every clip at once (onStart); a cue whose clip is still loading is skipped. */
 export function loadSfx(): void {
-  renderAll();
   for (const name of new Set(Object.values(SAMPLES))) {
     loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
   }
@@ -117,7 +116,17 @@ export function startMusic(): void { if (music) return; music = true; beat = 0; 
 export function stopMusic(): void { music = false; }
 
 /** Each frame once the mixer runs: the pad once it is made, then the music's beats by mixer time. */
+let __bedsStarted = false;
+function startBeds(): void {
+  if (__bedsStarted) return;
+  __bedsStarted = true;
+  void (async () => {
+    renderAll();
+  })();
+}
+
 export function update(): void {
+  startBeds();
   if (context.state !== "running") return; // starting the pad and the music still waits for the mixer
   try {
     const padClip = notes.get("pad");
